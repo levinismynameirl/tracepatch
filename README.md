@@ -326,7 +326,7 @@ t.to_json("trace.json")
 **trace.json:**
 ```json
 {
-  "tracepatch_version": "0.3.0",
+  "tracepatch_version": "0.3.2",
   "timestamp": "2026-02-12T14:30:22.123456",
   "label": "my-trace",
   "call_count": 42,
@@ -472,7 +472,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## Changelog
 
-### v0.3.0 (2026-02-12)
+### v0.3.2 (2026-02-12)
 
 **Bug Fixes:**
 - Fixed double-nested cache directory issue

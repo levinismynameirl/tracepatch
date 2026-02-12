@@ -600,7 +600,7 @@ class trace:
             data = [r.to_dict() for r in self._collector.roots]
 
         payload: dict[str, Any] = {
-            "tracepatch_version": "0.3.0",
+            "tracepatch_version": "0.3.2",
             "timestamp": self._start_wall or datetime.datetime.now().isoformat(),
             "label": self._label,
             "call_count": self.call_count,
