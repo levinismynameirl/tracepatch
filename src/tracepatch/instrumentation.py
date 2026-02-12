@@ -349,6 +349,40 @@ def setup_test_environment(config: TracepatchConfig, working_dir: Path) -> Setup
             print("   tracepatch will create temporary files in your working directory.")
             print()
     
+    # Check if custom test script is enabled
+    if config.test.custom.enabled and config.test.custom.script:
+        # Use custom script instead of auto-generating
+        print("\nUsing custom test script from configuration...")
+        test_file = working_dir / "_tracepatch_filetotest.py"
+        with open(test_file, "w", encoding="utf-8") as f:
+            f.write(config.test.custom.script)
+        
+        state.test_runner_path = test_file
+        state.created_files.append(test_file)
+        print(f"✓ Created {test_file.name} from custom script")
+        
+        # Still ensure cache directory and save state
+        cache_dir = working_dir / _CACHE_DIR_NAME
+        cache_dir.mkdir(exist_ok=True)
+        state.save(cache_dir)
+        
+        print(f"\n{'=' * 70}")
+        print("Setup complete!")
+        print(f"{'=' * 70}")
+        print()
+        print("⚠️  IMPORTANT: Do not delete the .tracepatch_cache folder!")
+        print("   It contains setup state needed for cleanup with 'tph disable'")
+        print()
+        print(f"Run tests with:")
+        print(f"  python {test_file.name}")
+        print()
+        print(f"Cleanup with:")
+        print(f"  tph disable")
+        print()
+        
+        return state
+    
+    # Continue with auto-generated test runner
     # Ensure __init__.py exists
     ensure_init_file(working_dir, state)
     if state.created_files and state.created_files[-1].name == "__init__.py":

@@ -52,20 +52,41 @@ class TestInputConfig:
 
 
 @dataclass
+class CustomTestConfig:
+    """Configuration for custom test script."""
+    enabled: bool
+    script: str
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CustomTestConfig:
+        return cls(
+            enabled=data.get("enabled", False),
+            script=data.get("script", "")
+        )
+    
+    @classmethod
+    def default(cls) -> CustomTestConfig:
+        return cls(enabled=False, script="")
+
+
+@dataclass
 class TestConfig:
     """Test setup configuration."""
     files: list[TestFileConfig]
     inputs: list[TestInputConfig]
+    custom: CustomTestConfig
     
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TestConfig:
         files = [TestFileConfig.from_dict(f) for f in data.get("files", [])]
         inputs = [TestInputConfig.from_dict(i) for i in data.get("inputs", [])]
-        return cls(files=files, inputs=inputs)
+        custom_data = data.get("custom", {})
+        custom = CustomTestConfig.from_dict(custom_data) if custom_data else CustomTestConfig.default()
+        return cls(files=files, inputs=inputs, custom=custom)
     
     @classmethod
     def default(cls) -> TestConfig:
-        return cls(files=[], inputs=[])
+        return cls(files=[], inputs=[], custom=CustomTestConfig.default())
 
 
 @dataclass
@@ -74,6 +95,7 @@ class TracepatchConfig:
 
     # Tracing behavior
     ignore_modules: list[str]
+    include_modules: list[str]  # Allowlist mode - trace only these modules
     max_depth: int
     max_calls: int
     max_repr: int
@@ -98,7 +120,8 @@ class TracepatchConfig:
     def default(cls) -> TracepatchConfig:
         """Return default configuration."""
         return cls(
-            ignore_modules=[],
+            ignore_modules=["unittest.mock"],
+            include_modules=[],  # Empty = trace all (except ignored)
             max_depth=30,
             max_calls=10_000,
             max_repr=120,
@@ -123,6 +146,7 @@ class TracepatchConfig:
         
         return cls(
             ignore_modules=data.get("ignore_modules", defaults.ignore_modules),
+            include_modules=data.get("include_modules", defaults.include_modules),
             max_depth=data.get("max_depth", defaults.max_depth),
             max_calls=data.get("max_calls", defaults.max_calls),
             max_repr=data.get("max_repr", defaults.max_repr),
@@ -160,6 +184,12 @@ def load_config(
     2. `tracepatch.toml` in the current directory
     3. `pyproject.toml` in the current directory (looking for [tool.tracepatch])
     4. If `search_parents` is True, search parent directories for the above files
+    
+    Environment variables can override settings:
+    - TRACEPATCH_ENABLED=0|1|false|true - Enable/disable tracing globally
+    - TRACEPATCH_MAX_DEPTH=N - Override max_depth
+    - TRACEPATCH_MAX_CALLS=N - Override max_calls
+    - TRACEPATCH_COLOR=1 - Enable colored output
 
     Parameters
     ----------
@@ -172,8 +202,14 @@ def load_config(
     -------
     Tuple of (TracepatchConfig instance, config file path or None).
     """
+    import os
+    
     if tomllib is None:
         # TOML library not available, return defaults
+        config = TracepatchConfig.default()
+        # Apply environment variable overrides
+        _apply_env_overrides(config)
+        return config, None
         return TracepatchConfig.default(), None
 
     # If explicit path provided, try to load it
@@ -182,8 +218,11 @@ def load_config(
         if config_path.exists():
             config = _load_from_file(config_path)
             if config is not None:
+                _apply_env_overrides(config)
                 return config, config_path
-        return TracepatchConfig.default(), None
+        config = TracepatchConfig.default()
+        _apply_env_overrides(config)
+        return config, None
 
     # Search for config files
     search_dir = Path.cwd()
@@ -193,6 +232,7 @@ def load_config(
         if tracepatch_toml.exists():
             config = _load_from_file(tracepatch_toml, section=None)
             if config is not None:
+                _apply_env_overrides(config)
                 return config, tracepatch_toml
 
         # Try pyproject.toml with [tool.tracepatch] section
@@ -200,6 +240,7 @@ def load_config(
         if pyproject_toml.exists():
             config = _load_from_file(pyproject_toml, section="tool.tracepatch")
             if config is not None:
+                _apply_env_overrides(config)
                 return config, pyproject_toml
 
         # Move to parent directory
@@ -208,7 +249,9 @@ def load_config(
         search_dir = search_dir.parent
 
     # No config found, return defaults
-    return TracepatchConfig.default(), None
+    config = TracepatchConfig.default()
+    _apply_env_overrides(config)
+    return config, None
 
 
 def _load_from_file(
@@ -268,6 +311,7 @@ def save_config(config: TracepatchConfig, path: Union[str, Path]) -> None:
 
     config_dict = {
         "ignore_modules": config.ignore_modules,
+        "include_modules": config.include_modules,
         "max_depth": config.max_depth,
         "max_calls": config.max_calls,
         "max_repr": config.max_repr,

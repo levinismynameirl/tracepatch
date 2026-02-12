@@ -47,15 +47,24 @@ def _ensure_cache_dir(base: Union[str, Path, None] = None) -> Path:
     Parameters
     ----------
     base:
-        Parent directory for the cache folder.  Defaults to the current
-        working directory.
+        Parent directory for the cache folder, or the cache directory itself.
+        Defaults to the current working directory.
 
     Returns
     -------
     Path to the cache directory.
     """
-    parent = Path(base) if base is not None else Path.cwd()
-    cache_dir = parent / _CACHE_DIR_NAME
+    if base is None:
+        parent = Path.cwd()
+        cache_dir = parent / _CACHE_DIR_NAME
+    else:
+        base_path = Path(base)
+        # Check if base is already a cache directory
+        if base_path.name == _CACHE_DIR_NAME:
+            cache_dir = base_path
+        else:
+            cache_dir = base_path / _CACHE_DIR_NAME
+    
     cache_dir.mkdir(exist_ok=True)
 
     gitignore = cache_dir / ".gitignore"
@@ -117,6 +126,7 @@ class TraceNode:
 _DEFAULT_MAX_REPR = 120
 _DEFAULT_MAX_DEPTH = 30
 _DEFAULT_MAX_CALLS = 10_000
+_DEFAULT_MAX_TIME = 60.0  # seconds
 
 
 @dataclass(frozen=True)
@@ -127,6 +137,7 @@ class TraceConfig:
     max_depth: int = _DEFAULT_MAX_DEPTH
     max_calls: int = _DEFAULT_MAX_CALLS
     max_repr: int = _DEFAULT_MAX_REPR
+    max_time: float = _DEFAULT_MAX_TIME  # Maximum trace duration in seconds
 
 
 # ---------------------------------------------------------------------------
@@ -187,28 +198,55 @@ class _Collector:
     get different collectors even when sharing an event loop thread.
     """
 
-    def __init__(self, config: TraceConfig) -> None:
+    def __init__(self, config: TraceConfig, trace_id: str) -> None:
         self.config = config
         self.roots: list[TraceNode] = []
         self.call_count: int = 0
         self.disabled: bool = False
+        self.trace_id = trace_id  # Unique ID for correlation in multi-threaded scenarios
+        self.start_time = time.perf_counter()  # For max_time enforcement
 
         # Stack of (node, depth) tracking the open call frames.
         self._stack: list[TraceNode] = []
+        # Track seen objects to detect circular references
+        self._seen_objects: set[int] = set()
 
     # ------------------------------------------------------------------
     # safe repr
     # ------------------------------------------------------------------
 
     def _safe_repr(self, obj: object) -> str:
+        """Safely create a string representation, handling errors and circular refs."""
         limit = self.config.max_repr
         try:
-            r = repr(obj)
+            # Detect circular references
+            obj_id = id(obj)
+            if obj_id in self._seen_objects:
+                return "<circular reference>"
+            
+            # Track this object temporarily
+            self._seen_objects.add(obj_id)
+            
+            try:
+                r = repr(obj)
+            except Exception as e:
+                # Log the error to stderr but don't raise (don't affect traced code)
+                try:
+                    import sys
+                    print(f"[tracepatch] repr failed: {type(e).__name__}", file=sys.stderr)
+                except Exception:
+                    pass
+                return "<unprintable>"
+            finally:
+                # Always clean up
+                self._seen_objects.discard(obj_id)
+            
+            if len(r) > limit:
+                return r[: limit - 3] + "..."
+            return r
         except Exception:
-            return "<repr failed>"
-        if len(r) > limit:
-            return r[: limit - 3] + "..."
-        return r
+            # Catch-all: never let repr issues crash the traced code
+            return "<error>"
 
     # ------------------------------------------------------------------
     # Trace callback events
@@ -227,6 +265,11 @@ class _Collector:
     def handle_call(self, frame: FrameType) -> bool:
         """Process a call event.  Returns True if the call was recorded."""
         if self.disabled:
+            return False
+
+        # Enforce max_time
+        if time.perf_counter() - self.start_time > self.config.max_time:
+            self.disabled = True
             return False
 
         if self._should_ignore(frame):
@@ -298,14 +341,19 @@ class _Collector:
             node.return_value = self._safe_repr(retval)
 
     def handle_exception(self, frame: FrameType, exc_info: Any) -> None:
+        """Record exception information, never raising errors."""
         if self.disabled or not self._stack:
             return
-        exc_type, exc_value, _tb = exc_info
-        node = self._stack[-1]
         try:
-            node.exception = f"{exc_type.__name__}: {exc_value}"
+            exc_type, exc_value, _tb = exc_info
+            node = self._stack[-1]
+            try:
+                node.exception = f"{exc_type.__name__}: {exc_value}"
+            except Exception:
+                node.exception = "<exception repr failed>"
         except Exception:
-            node.exception = "<exception repr failed>"
+            # Catch-all: never let exception handling crash the traced code
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +447,9 @@ class trace:
         to prevent runaway overhead.
     max_repr:
         Maximum character length for repr() of arguments and return values.
+    max_time:
+        Maximum trace duration in seconds. When exceeded, tracing stops
+        to prevent runaway resource usage in production.
     """
 
     def __init__(
@@ -408,6 +459,7 @@ class trace:
         max_depth: int = _DEFAULT_MAX_DEPTH,
         max_calls: int = _DEFAULT_MAX_CALLS,
         max_repr: int = _DEFAULT_MAX_REPR,
+        max_time: float = _DEFAULT_MAX_TIME,
         cache: bool = True,
         cache_dir: Optional[Union[str, Path]] = None,
         label: Optional[str] = None,
@@ -417,6 +469,7 @@ class trace:
             max_depth=max_depth,
             max_calls=max_calls,
             max_repr=max_repr,
+            max_time=max_time,
         )
         self._collector: Optional[_Collector] = None
         self._token: Any = None
@@ -425,13 +478,16 @@ class trace:
         self._cache_path: Optional[Path] = None
         self._label = label
         self._start_wall: Optional[str] = None
+        # Generate unique trace ID for correlation
+        import uuid
+        self._trace_id = str(uuid.uuid4())[:8]
 
     # ------------------------------------------------------------------
     # Sync context manager
     # ------------------------------------------------------------------
 
     def __enter__(self) -> "trace":
-        self._collector = _Collector(self._config)
+        self._collector = _Collector(self._config, self._trace_id)
         self._token = _active_collector.set(self._collector)
         self._start_wall = datetime.datetime.now().isoformat()
         _install_trace()
@@ -453,6 +509,56 @@ class trace:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.__exit__(exc_type, exc_val, exc_tb)
+
+    # ------------------------------------------------------------------
+    # Decorator support
+    # ------------------------------------------------------------------
+
+    def __call__(self, func):
+        """Enable use as a decorator: @trace() or @trace(label='name').
+        
+        Supports:
+        - Regular functions and methods
+        - Async functions
+        - Generators and async generators
+        - Static methods and class methods (apply @trace after @staticmethod/@classmethod)
+        """
+        import functools
+        import inspect
+        
+        # Preserve metadata using functools.wraps
+        if inspect.iscoroutinefunction(func):
+            # Async function
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                async with self:
+                    return await func(*args, **kwargs)
+            return async_wrapper
+        
+        elif inspect.isasyncgenfunction(func):
+            # Async generator
+            @functools.wraps(func)
+            async def async_gen_wrapper(*args, **kwargs):
+                async with self:
+                    async for item in func(*args, **kwargs):
+                        yield item
+            return async_gen_wrapper
+        
+        elif inspect.isgeneratorfunction(func):
+            # Generator function
+            @functools.wraps(func)
+            def gen_wrapper(*args, **kwargs):
+                with self:
+                    yield from func(*args, **kwargs)
+            return gen_wrapper
+        
+        else:
+            # Regular sync function or method
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                with self:
+                    return func(*args, **kwargs)
+            return sync_wrapper
 
     # ------------------------------------------------------------------
     # Query methods

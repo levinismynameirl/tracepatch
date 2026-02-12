@@ -1,44 +1,59 @@
 # tracepatch
 
-Focused, opt-in runtime call tracing for a single execution context.
+Focused, opt-in runtime call tracing for a single execution context with production-ready safety features.
 
-tracepatch is a debugging tool. It records function calls, arguments, return
-values, and timing for one specific scope (a request handler, a CLI command,
-a background task) and produces a readable call tree. It is not a replacement
-for OpenTelemetry, structured logging, or APM dashboards. Think of it as a
-scalpel: you point it at one execution path that is misbehaving, and it tells
-you exactly what happened. It is recommended you leave tracepatch installed in production and have it ready to use when you need it, since it has zero overhead when not active.
+tracepatch is a debugging tool that records function calls, arguments, return values, and timing for one specific scope (a request handler, a CLI command, a background task) and produces a readable call tree. It's not a replacement for OpenTelemetry, structured logging, or APM dashboards. Think of it as a scalpel: you point it at one execution path that is misbehaving, and it tells you exactly what happened. Leave tracepatch installed in production - it has **zero overhead when inactive**.
 
 ## Features
 
-- **Pure Python**, no external dependencies for core tracing (optional TOML support requires `tomli` on Python <3.11).
-- **Zero overhead when inactive**. Safe to leave installed in production; the profiling hook is only active inside a `trace()` block.
-- **Works in synchronous and asynchronous code** with full async/await support.
-- **Context-isolated tracing** using `contextvars` - concurrent async tasks don't interfere with each other.
-- **Built-in safety limits** (`max_depth`, `max_calls`) that automatically disable tracing if exceeded.
-- **TOML configuration** support via `tracepatch.toml` or `pyproject.toml` files.
-- **Powerful CLI** (`tph` / `tracepatch`) for viewing logs, displaying trees, and managing test environments.
-- **Automated test setup** - automatically instrument functions for tracing with `tph setup`.
-- **Git-aware safety checks** - warns about staged changes before setup/disable operations.
-- **Human-readable ASCII call tree** output with timing information.
-- **JSON export** for further processing and custom analysis.
-- **Automatic caching** of traces to `.tracepatch_cache/` for later review.
+### Core Capabilities
+- **Zero overhead when inactive** - profiling hook only active inside `trace()` blocks
+- **Pure Python** - no external dependencies for core tracing (optional TOML support via `tomli` on Python <3.11)
+- **Full async/await support** - works in synchronous and asynchronous code
+- **Context-isolated tracing** - concurrent async tasks don't interfere (uses `contextvars`)
+- **Thread-safe** - each trace gets a unique ID for correlation in multi-threaded scenarios
+
+### Safety & Performance
+- **Built-in safety limits:** `max_depth`, `max_calls`, `max_time` - auto-disable if exceeded
+- **Error resilience** - catches circular references, `__repr__` failures, doesn't affect traced code
+- **Production-safe** - environment variable `TRACEPATCH_ENABLED=0` disables globally
+- **Memory-efficient** - safe repr with truncation, circular reference detection
+
+### Multiple Output Formats
+- **Human-readable ASCII trees** with timing information
+- **Colorized output** - green (fast), yellow (slow), red (very slow) based on duration
+- **JSON export** for machine processing and custom analysis
+- **HTML output** - interactive collapsible tree view with syntax highlighting
+
+### Developer Experience
+- **Decorator support** - use `@trace()` on functions, async functions, generators, async generators
+- **Powerful CLI** (`tph`/`tracepatch`) - view logs, display trees, filter/limit depth
+- **Tree filtering** - `--filter 'myapp.*'` or `--filter '!unittest'` to focus on relevant calls
+- **Depth limiting** - `--depth 3` to show only top-level calls
+- **TOML configuration** via `tracepatch.toml` or `pyproject.toml`
+- **Environment overrides** - `TRACEPATCH_MAX_DEPTH`, `TRACEPATCH_MAX_CALLS`, etc.
+- **Allowlist mode** - `include_modules` for tracing only specific modules
+
+### Testing & Automation
+- **Auto test setup** - `tph setup` instruments functions from config
+- **Custom test scripts** - `[test.custom]` section for complete control  
+- **Automatic caching** - traces saved to `.tracepatch_cache/` for later review
+- **Git-aware safety** - warns about staged changes before operations
 
 ## Installation
 
-```
+```bash
 pip install tracepatch
 ```
 
-Or install from source:
-
-```
+From source:
+```bash
 pip install .
 ```
 
-## Quick start
+## Quick Start
 
-### Synchronous
+### Context Manager (Sync)
 
 ```python
 from tracepatch import trace
@@ -56,14 +71,13 @@ with trace() as t:
 print(t.tree())
 ```
 
-Output:
-
+**Output:**
 ```
 └── __main__.handle_request()  [0.03ms]
     └── __main__.fetch_user(user_id=42) -> {'id': 42, 'name': 'Alice'}  [0.01ms]
 ```
 
-### Asynchronous
+### Context Manager (Async)
 
 ```python
 import asyncio
@@ -84,484 +98,407 @@ async def main():
 asyncio.run(main())
 ```
 
-### JSON export
+### Decorator Usage
 
 ```python
-with trace() as t:
-    handle_request()
+from tracepatch import trace
 
-t.to_json("trace.json")
+# Simple decorator
+@trace(label="api-handler")
+def handle_api_request():
+    process_data()
+    return {"status": "OK"}
+
+result = handle_api_request()
+
+# Works with async functions
+@trace(label="async-task")
+async def background_job():
+    await fetch_data()
+    await process_data()
+
+await background_job()
+
+# Works with generators
+@trace()
+def data_generator():
+    for i in range(10):
+        yield process_item(i)
+
+# Works with async generators
+@trace()
+async def async_stream():
+    for i in range(10):
+        yield await fetch_item(i)
 ```
 
-The JSON file contains a structured representation of the call tree with
-timing in milliseconds, suitable for custom analysis scripts.
+**Note:** For `@staticmethod` or `@classmethod`, apply `@trace` **after** the decorator:
+```python
+class MyClass:
+    @staticmethod
+    @trace()
+    def my_static_method():
+        pass
+```
+
+### Production Safety
+
+```python
+from tracepatch import trace
+
+# Auto-stop after 5 seconds (prevent runaway traces)
+with trace(max_time=5.0) as t:
+    long_running_operation()
+
+# Limit depth and calls
+with trace(max_depth=10, max_calls=1000) as t:
+    recursive_function()
+    
+print(f"Limited: {t.was_limited}") # True if stopped early
+```
+
+### Filtering and Focus
+
+```python
+from tracepatch import trace
+
+# Ignore noisy modules
+with trace(ignore_modules=["logging", "urllib"]) as t:
+    make_api_call()  # Won't see internal logging/urllib calls
+
+# Environment variable override (set once, affects all traces)
+# export TRACEPATCH_ENABLED=0  # Disable all tracing globally
+# export TRACEPATCH_MAX_DEPTH=5
+```
 
 ## Configuration
 
-The `trace()` constructor accepts the following keyword arguments:
-
-| Parameter        | Default | Description                                                |
-|------------------|---------|------------------------------------------------------------|
-| `ignore_modules` | `[]`    | List of module name prefixes to exclude from the trace.    |
-| `max_depth`      | `30`    | Maximum call nesting depth. Deeper calls are silently skipped. |
-| `max_calls`      | `10000` | Maximum total calls to record. Tracing freezes when exceeded. |
-| `max_repr`       | `120`   | Maximum character length for `repr()` of arguments and return values. |
-
-### TOML Configuration Files
-
-Instead of passing parameters directly, you can configure tracepatch via TOML files. tracepatch will automatically search for:
-
-1. `tracepatch.toml` in the current or parent directories
-2. `[tool.tracepatch]` section in `pyproject.toml`
-
-Example `tracepatch.toml`:
+Create `tracepatch.toml` or add `[tool.tracepatch]` to `pyproject.toml`:
 
 ```toml
-# Modules to ignore during tracing (by prefix)
-ignore_modules = ["urllib3", "requests", "http"]
+# Tracing behavior
+ignore_modules = ["unittest.mock", "logging"]  # Module prefixes to exclude
+# include_modules = ["myapp"]  # Allowlist: only trace these modules
+max_depth = 30          # Maximum call nesting depth
+max_calls = 10000       # Stop after this many calls
+max_repr = 120          # Max length for repr() of args/returns
+max_time = 60.0         # Stop after this many seconds
 
-# Maximum call nesting depth to record
-max_depth = 50
-
-# Maximum total calls to record before disabling tracing
-max_calls = 20000
-
-# Maximum character length for repr() of arguments and return values
-max_repr = 200
-
-# Enable automatic caching of traces
-cache = true
-
-# Custom cache directory (default: .tracepatch_cache)
-# cache_dir = ".traces"
-
-# Default label for traces (appears in logs)
-default_label = "my-app"
-
-# Automatically save traces to cache
+# Cache settings
+cache = true            # Auto-save traces
+# cache_dir = ".custom_cache"
 auto_save = true
 
 # Display settings
 show_args = true
 show_return = true
-tree_style = "ascii"  # or "unicode"
+tree_style = "ascii"    # "ascii" or "unicode"
 
-# Test setup configuration (optional)
-# Used by 'tph setup' command to generate test runners
+# Test setup (for `tph setup`)
 [[test.files]]
-path = "mymodule.py"
-functions = ["my_function", "process_data"]
+path = "myapp/core.py"
+functions = ["process", "validate"]
 
-[[test.inputs]]
-function = "my_function"
-args = [42, "test"]
-kwargs = {user_id = "abc123"}
+[test.custom]
+enabled = false         # Use custom test script
+script = ""
 ```
 
-Using config files in code:
+Generate starter config:
+```bash
+tph init
+```
+
+## CLI Usage
+
+### List Traces
+
+```bash
+tph logs                    # List recent traces
+tph logs --limit 10         # Show only 10 most recent
+tph logs --cache-dir /path  # Search custom directory
+```
+
+### View Trace Tree
+
+```bash
+tph tree trace.json         # Display call tree
+tph tree trace.json --color # Colorize by duration
+tph tree trace.json --filter 'myapp.*'  # Show only myapp calls
+tph tree trace.json --filter '!logging' #  Exclude logging calls
+tph tree trace.json --depth 3           # Limit to 3 levels
+```
+
+### Export Formats
+
+```bash
+tph tree trace.json --format json       # Machine-readable JSON
+tph tree trace.json --format html -o trace.html  # Interactive HTML
+```
+
+### Configuration
+
+```bash
+tph config              # Show current configuration
+tph config --file custom.toml  # Load specific config
+```
+
+### Test Setup
+
+```bash
+tph setup               # Generate test runner from config
+tph disable             # Clean up test environment
+```
+
+### Environment Variables
+
+```bash
+export TRACEPATCH_ENABLED=0        # Disable globally
+export TRACEPATCH_MAX_DEPTH=10     # Override max_depth
+export TRACEPATCH_MAX_CALLS=5000   # Override max_calls
+export TRACEPATCH_COLOR=1          # Enable colored output
+```
+
+## Advanced Usage
+
+### Circular Reference Handling
 
 ```python
-from tracepatch import trace, load_config
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.next = None
 
-# Load configuration from TOML files
-config, config_path = load_config()
+# Create circular reference
+a = Node(1)
+b = Node(2)
+a.next = b
+b.next = a  # Circular!
 
-# Use the configuration
-with trace(**config.to_trace_kwargs()) as t:
-    my_function()
-
-print(t.tree())
+with trace() as t:
+    process(a)  # Won't crash - shows "<circular reference>"
 ```
 
-## Command-Line Interface
+### Error Handling
 
-tracepatch includes a powerful CLI for viewing traces and managing test environments. Two commands are available: `tracepatch` and the shorter alias `tph` (recommended).
-
-### List cached traces
-
-```bash
-$ tph logs
-```
-
-Lists all trace logs in `.tracepatch_cache/` with timestamps, labels, and call counts.
-
-Options:
-- `--cache-dir DIR` - Specify custom cache directory
-- `--limit N` - Limit number of results (default: 50)
-
-### View trace metadata
-
-```bash
-$ tph view .tracepatch_cache/trace_20260212_143022_123456.json
-```
-
-Shows detailed metadata:
-- Timestamp and label
-- Call count and limit status
-- Configuration used (max_depth, max_calls, etc.)
-- Root function summary
-
-### Display call tree
-
-```bash
-$ tph tree .tracepatch_cache/trace_20260212_143022_123456.json
-```
-
-Renders the full call tree with timing from a saved trace file.
-
-Options:
-- `--max-depth N` - Limit tree depth for readability
-- `--show-args / --no-args` - Toggle argument display
-- `--show-return / --no-return` - Toggle return value display
-
-### Show configuration
-
-```bash
-$ tph config
-```
-
-Displays current configuration loaded from TOML files. Shows:
-- Configuration file location (or defaults if none found)
-- All tracing settings
-- Test configuration if present
-
-If no config file is found, shows helpful instructions on how to create one.
-
-Options:
-- `--file PATH` - Check specific config file
-
-### Help
-
-```bash
-$ tph help
-```
-
-Shows comprehensive usage information with examples for all commands.
-
-### Automated test setup workflow
-
-tracepatch can automatically instrument and test specific functions from your configuration. This is especially useful for backend Python projects where functions might not work in isolation.
-
-#### Quick start
-
-```bash
-# Set up test environment (reads tracepatch.toml)
-$ tph setup
-
-# Run the generated test file
-$ python _tracepatch_filetotest.py
-
-# Clean up when done
-$ tph disable
-```
-
-#### Configuration
-
-First, create a `tracepatch.toml` with test configuration:
-
-```toml
-# Basic tracing settings
-max_depth = 50
-max_calls = 20000
-cache = true
-default_label = "test-run"
-
-# Specify which files and functions to test
-[[test.files]]
-path = "mymodule.py"
-functions = ["my_function", "process_data", "calculate"]
-
-[[test.files]]
-path = "database.py"
-functions = ["connect", "query"]
-
-# Optional: Provide custom test inputs
-[[test.inputs]]
-function = "my_function"
-args = [42, "test"]
-kwargs = {user_id = "abc123"}
-
-[[test.inputs]]
-function = "calculate"
-args = [10, 20]
-kwargs = {}
-```
-
-#### Running `tph setup`
-
-The setup command:
-
-1. **Checks Git status** (if Git is available)
-   - ⚠️  Warns if you have staged changes and asks for confirmation
-   - ℹ️  Notes if you have unstaged changes
-   - Continues safely if no Git or no changes
-
-2. **Validates configuration**
-   - Checks that all configured files exist
-   - Verifies function signatures using AST parsing
-   - Reports missing files or functions
-
-3. **Creates necessary files**
-   - Generates `__init__.py` if needed (makes directory a Python package)
-   - Creates `_tracepatch_filetotest.py` with wrapper functions
-   - Auto-generates default arguments for functions without custom inputs
-
-4. **Saves setup state**
-   - Stores state in `.tracepatch_cache/setup_state.json`
-   - Records all created and modified files
-   - **Important**: Don't delete `.tracepatch_cache/` - needed for cleanup!
-
-#### Running the test file
-
-The generated `_tracepatch_filetotest.py`:
-
-- Imports and wraps your functions
-- Creates wrapper functions that enable tracing
-- Calls each function with configured or auto-generated inputs
-- Displays results with ✓ (success) or ✗ (exception) indicators
-- Shows full call tree with timing
-- Saves trace to cache for later review
-
-```bash
-$ python _tracepatch_filetotest.py
-Testing functions from tracepatch configuration...
-
-Testing functions from mymodule.py:
-  ✓ my_function returned: 123
-  ✓ process_data returned: [1, 2, 3]
-  ✗ calculate raised: TypeError: missing required argument
-
-======================================================================
-TRACE RESULTS
-======================================================================
-Total calls: 47
-
-Trace saved to: .tracepatch_cache/trace_20260212_143802_618610_test-run.json
-View with: tph tree .tracepatch_cache/trace_20260212_143802_618610_test-run.json
-
-[Call tree output...]
-```
-
-#### Running `tph disable`
-
-The disable command:
-
-1. **Checks Git status** (if Git is available)
-   - ⚠️  Warns if you have staged changes
-   - Asks for confirmation before proceeding
-
-2. **Cleans up generated files**
-   - Removes `_tracepatch_filetotest.py`
-   - Removes `__init__.py` if it was created by setup
-   - Restores any modified files to their original state
-
-3. **Preserves traces**
-   - Keeps `.tracepatch_cache/` directory and all trace logs
-   - Only removes the setup state file
-   - Traces remain available for analysis with `tph logs`, `tph tree`, etc.
-
-#### Error handling
-
-If you run `tph setup` without a configuration file:
-
-```
-❌ Error: No tracepatch configuration file found!
-
-What to do:
-  1. Create a 'tracepatch.toml' file in your project directory
-  2. OR add a [tool.tracepatch] section to your pyproject.toml
-
-Example tracepatch.toml:
-[Full example shown...]
-```
-
-If your config file exists but has no test configuration:
-
-```
-❌ Error: No test files configured!
-
-Configuration loaded from: /path/to/tracepatch.toml
-But no [[test.files]] section was found.
-
-Add this to your config file:
-[[test.files]]
-path = "your_file.py"
-functions = ["function_name"]
-```
-
-## Usage Examples
-
-### Filtering noise
+Tracing machinery catches and logs exceptions without affecting traced code:
 
 ```python
-with trace(ignore_modules=["logging", "urllib3", "ssl"]) as t:
-    handle_request()
+class BadRepr:
+    def __repr__(self):
+        raise RuntimeError("broken repr")
 
-print(t.tree())
+with trace() as t:
+    use_object(BadRepr())  # Shows "<unprintable>", doesn't crash
+
+# Exception info logged to stderr:
+# [tracepatch] repr failed: RuntimeError
 ```
 
-### Limiting scope
+### Thread Safety
+
+Each trace gets a unique ID for correlation:
 
 ```python
-with trace(max_depth=5, max_calls=500) as t:
-    handle_request()
+import threading
 
-if t.was_limited:
-    print("Warning: trace was truncated due to limits")
+def worker(task_id):
+    with trace(label=f"worker-{task_id}") as t:
+        do_work(task_id)
+        # Each trace isolated - no interference
 
-print(t.tree())
+threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
 ```
 
-## Python API Reference
+### JSON Structure
 
-### `trace(**kwargs)`
-
-Context manager (sync and async). Returns itself. Configuration via keyword
-arguments listed above.
-
-### `t.tree() -> str`
-
-Returns a human-readable ASCII call tree string with timing information for
-each call.
-
-### `t.to_json(path) -> None`
-
-Writes the trace to a JSON file. `path` can be a string, a `pathlib.Path`,
-or a writable file object.
-
-### `t.call_count -> int`
-
-Number of calls recorded.
-
-### `t.was_limited -> bool`
-
-True if the trace was cut short because `max_calls` was exceeded.
-
-### `t.roots -> list[TraceNode]`
-
-Direct access to the root `TraceNode` objects for programmatic traversal.
-
-### `load_config(path=None, search_parents=True) -> tuple[TracepatchConfig, Path | None]`
-
-Load configuration from TOML files.
-
-**Parameters:**
-- `path`: Optional explicit path to a TOML file
-- `search_parents`: If True, search parent directories for config files
-
-**Returns:**
-- Tuple of (TracepatchConfig, config file path or None)
-
-**Example:**
 ```python
-from tracepatch import load_config, trace
+with trace() as t:
+    do_something()
 
-config, config_path = load_config()
-if config_path:
-    print(f"Loaded from {config_path}")
-
-with trace(**config.to_trace_kwargs()) as t:
-    my_function()
+t.to_json("trace.json")
 ```
 
-### `TracepatchConfig`
+**trace.json:**
+```json
+{
+  "tracepatch_version": "0.2.0",
+  "timestamp": "2026-02-12T14:30:22.123456",
+  "label": "my-trace",
+  "call_count": 42,
+  "was_limited": false,
+  "config": {
+    "max_depth": 30,
+    "max_calls": 10000,
+    "max_repr": 120,
+    "ignore_modules": ["unittest.mock"]
+  },
+  "trace": [
+    {
+      "name": "do_something",
+      "module": "__main__",
+      "args": "x=42, y='hello'",
+      "return_value": "{'result': 'OK'}",
+      "start": 1234567890.123,
+      "end": 1234567890.456,
+      "elapsed_ms": 333.0,
+      "children": [...]
+    }
+  ]
+}
+```
 
-Configuration dataclass with the following attributes:
-- `ignore_modules`: List of module prefixes to exclude
-- `max_depth`: Maximum call nesting depth
-- `max_calls`: Maximum total calls to record
-- `max_repr`: Maximum repr() length
-- `cache`: Enable automatic caching
-- `cache_dir`: Custom cache directory
-- `default_label`: Default label for traces
-- `auto_save`: Automatically save traces
-- `show_args`: Show arguments in output
-- `show_return`: Show return values in output
-- `tree_style`: Tree rendering style ("ascii" or "unicode")
+### HTML Output
 
-**Methods:**
-- `to_trace_kwargs()`: Convert to kwargs dict for `trace()` constructor
+```bash
+tph tree trace.json --format html -o report.html
+```
 
-### `trace.logs(cache_dir=None, limit=50) -> list[dict]`
+Creates interactive HTML with:
+- Collapsible tree structure
+- Color-coded timing (green/yellow/red)
+- Syntax highlighting
+- Dark theme
 
-Class method to list recent trace logs from `.tracepatch_cache/`.
+## Common Use Cases
 
-**Parameters:**
-- `cache_dir`: Optional parent directory containing `.tracepatch_cache/`
-- `limit`: Maximum number of entries to return (default: 50)
+### Debug API Handler
 
-**Returns:**
-- List of dicts with metadata for each trace (timestamp, label, call_count, was_limited, file path)
-
-**Example:**
 ```python
+from flask import Flask
 from tracepatch import trace
 
-for entry in trace.logs():
-    print(f"{entry['timestamp']} - {entry['label']}: {entry['call_count']} calls")
+app = Flask(__name__)
+
+@app.route('/api/user/<user_id>')
+@trace(label="api-user")
+def get_user(user_id):
+    user = fetch_from_db(user_id)
+    enrich_user_data(user)
+    return jsonify(user)
 ```
 
-### `trace.load(path) -> dict`
+### Trace Specific Request
 
-Class method to load a complete trace log from a JSON file.
-
-**Parameters:**
-- `path`: Path to a trace JSON file
-
-**Returns:**
-- The full JSON contents as a dict
-
-**Example:**
 ```python
+from fastapi import FastAPI, Request
 from tracepatch import trace
 
-data = trace.load(".tracepatch_cache/trace_20260212_143022_123456.json")
-print(f"Trace had {data['call_count']} calls")
+app = FastAPI()
+
+@app.middleware("http")
+async def trace_requests(request: Request, call_next):
+    # Only trace requests with special header
+    if "X-Debug-Trace" in request.headers:
+        async with trace(label=f"request-{request.url.path}"):
+            response = await call_next(request)
+    else:
+        response = await call_next(request)
+    return response
 ```
 
-## Documentation
+### Debug Background Task
 
-For detailed guides and examples, see the documentation in the `docs/` directory:
+```python
+from celery import Celery
+from tracepatch import trace
 
-- **[CLI Guide](docs/cli-guide.md)** - Comprehensive guide to all CLI commands with examples
-- **[Configuration Guide](docs/configuration.md)** - Complete reference for TOML configuration options
-- **[Reading Logs](docs/reading-logs.md)** - Working with trace logs from Python and the command line
+app = Celery('tasks')
 
-### Quick Links
+@app.task
+@trace(label="celery-process")
+def process_user_data(user_id):
+    user = fetch_user(user_id)
+    validate_user(user)
+    save_results(user)
+```
 
-- **CLI Commands**: See [CLI Guide](docs/cli-guide.md#available-commands) for `tph logs`, `tph tree`, `tph setup`, etc.
-- **TOML Configuration**: See [Configuration Guide](docs/configuration.md#configuration-options) for all settings
-- **Test Setup**: See [CLI Guide](docs/cli-guide.md#tph-setup) for automated testing workflow
-- **Log Format**: See [Reading Logs](docs/reading-logs.md#json-structure) for JSON structure details
+### Test-Driven Development
 
-## How it works
+```python
+import pytest
+from tracepatch import trace
 
-tracepatch uses `sys.settrace` to install a lightweight tracing callback
-that fires on function call, return, and exception events in the current
-thread. On a 'call' event, the global trace function checks a
-`contextvars.ContextVar` to find the active collector for the current
-execution context. If no collector is active (the common case in production),
-the callback returns `None` immediately and Python does not trace that frame
-further, so overhead is negligible.
+def test_complex_workflow():
+    """Trace test execution to debug failures."""
+    with trace(label="test-workflow") as t:
+        result = complex_workflow(input_data)
+    
+    if not result:
+        # Save trace for debugging
+        t.to_json(f"/tmp/failed-test-{t._trace_id}.json")
+        
+    assert result
+```
 
-When a `trace()` block is entered, a new collector is created and stored in
-the ContextVar. The collector records call events into a tree of `TraceNode`
-objects. When the block exits, the profiling hook is removed (reference
-counted, so nested traces work correctly) and the ContextVar is reset.
+## Performance
 
-Because isolation is done through `contextvars` rather than thread-locals,
-concurrent `asyncio` tasks each get their own independent trace even though
-they share a single thread.
+- **Overhead when inactive:** ~0ns (no hooks installed)
+- **Overhead when active:** ~5-10μs per function call
+- **Memory:** ~1KB per captured call (includes args/return repr)
+- **Recommended limits:**
+  - `max_calls=10000` for typical requests (~10ms overhead)
+  - `max_depth=30` to avoid deep recursion overhead
+  - `max_time=60` to auto-stop runaway traces
+
+## Comparison With Other Tools
+
+| Tool | Use Case | Overhead | Scope |
+|------|----------|----------|-------|
+| **tracepatch** | Focused debugging, one execution | Low | Single scope |
+| OpenTelemetry | Distributed tracing, observability | Medium | Multi-service |
+| cProfile | Performance profiling | Medium | Whole program |
+| pdb/breakpoint | Interactive debugging | N/A | Manual |
+| logging | Structured events | Low | Whole program |
 
 ## Limitations
 
-- `sys.settrace` captures Python-level calls in the thread while
-  active. C-level functions (builtins, C extensions) are not captured.
-- There is measurable overhead while a trace block is active. This is a
-  debugging tool meant for targeted use, not always-on instrumentation.
-- Traces are scoped to a single thread. If your code spawns threads, only
-  the originating thread is traced by default.
+- **Not for profiling:** Use `cProfile` or `py-spy` for performance analysis
+- **Not for distributed tracing:** Use OpenTelemetry for multi-service workflows  
+- **Not for audit logging:** Use structured logging for compliance
+- **Synchronous tracing only:** No cross-task tracing (each async task isolated)
+
+## Contributing
+
+Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT. See LICENSE for the full text.
+MIT License. See [LICENSE](LICENSE) for details.
+
+## Changelog
+
+### v0.2.0 (2026-02-12)
+
+**Bug Fixes:**
+- Fixed double-nested cache directory issue
+- Fixed `tph logs` not finding traces
+- Added `unittest.mock` to default ignore list  
+- Custom test scripts now respected by `tph setup`
+
+**New Features:**
+- `@trace()` decorator support (functions, async, generators, async generators)
+- Tree filtering: `tph tree --filter 'pattern'`
+- Depth limiting: `tph tree --depth N`
+- Multiple output formats: JSON, HTML, colored text
+- `max_time` parameter for auto-stop
+- Circular reference detection
+- Improved error handling (never crashes traced code)
+- `include_modules` allowlist mode
+- Environment variable overrides
+- `tph init` command for starter config
+- Unique `trace_id` for thread correlation
+- Colorized output by duration
+
+**Improvements:**
+- Better `__repr__` failure handling
+- Thread-safe trace isolation
+- Enhanced CLI help and error messages
+
+### v0.1.0 (2025-01-15)
+
+Initial release
