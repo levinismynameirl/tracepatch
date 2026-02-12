@@ -210,6 +210,10 @@ class _Collector:
         self._stack: list[TraceNode] = []
         # Track seen objects to detect circular references
         self._seen_objects: set[int] = set()
+        # Track objects that have already warned about repr failures.
+        # Memory: bounded by max_calls and max_time limits, cleaned up on __exit__.
+        # Thread-safety: not needed, each collector is context-local (ContextVar).
+        self._warned_objects: set[int] = set()
 
     # ------------------------------------------------------------------
     # safe repr
@@ -230,12 +234,14 @@ class _Collector:
             try:
                 r = repr(obj)
             except Exception as e:
-                # Log the error to stderr but don't raise (don't affect traced code)
-                try:
-                    import sys
-                    print(f"[tracepatch] repr failed: {type(e).__name__}", file=sys.stderr)
-                except Exception:
-                    pass
+                # Only log the error once per unique object to avoid noise
+                if obj_id not in self._warned_objects:
+                    self._warned_objects.add(obj_id)
+                    try:
+                        import sys
+                        print(f"[tracepatch] repr failed: {type(e).__name__}", file=sys.stderr)
+                    except Exception:
+                        pass
                 return "<unprintable>"
             finally:
                 # Always clean up
