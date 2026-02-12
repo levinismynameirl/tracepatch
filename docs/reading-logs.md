@@ -64,7 +64,7 @@ Each log file is a self-contained JSON document:
 
 ```json
 {
-  "tracepatch_version": "0.2.0",
+  "tracepatch_version": "0.3.0",
   "timestamp": "2026-02-12T14:30:22.817345",
   "label": "checkout_flow",
   "call_count": 47,
