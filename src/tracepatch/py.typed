@@ -1,0 +1,7 @@
+"""Type stub for tracepatch public API."""
+
+from tracepatch._trace import TraceNode as TraceNode
+from tracepatch._trace import trace as trace
+
+__all__ = ["trace", "TraceNode"]
+__version__: str
