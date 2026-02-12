@@ -210,7 +210,9 @@ class _Collector:
         self._stack: list[TraceNode] = []
         # Track seen objects to detect circular references
         self._seen_objects: set[int] = set()
-        # Track objects that have already warned about repr failures
+        # Track objects that have already warned about repr failures.
+        # Memory: bounded by max_calls and max_time limits, cleaned up on __exit__.
+        # Thread-safety: not needed, each collector is context-local (ContextVar).
         self._warned_objects: set[int] = set()
 
     # ------------------------------------------------------------------
