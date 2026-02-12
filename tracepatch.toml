@@ -1,0 +1,47 @@
+# Example tracepatch configuration file
+# Place this in your project root or parent directories
+
+# Modules to ignore during tracing (by prefix)
+ignore_modules = ["urllib3", "requests", "http"]
+
+# Maximum call nesting depth to record
+max_depth = 50
+
+# Maximum total calls to record before disabling tracing
+max_calls = 20000
+
+# Maximum character length for repr() of arguments and return values
+max_repr = 200
+
+# Enable automatic caching of traces
+cache = true
+
+# Custom cache directory (default: .tracepatch_cache)
+# cache_dir = ".traces"
+
+# Default label for traces (appears in logs)
+default_label = "tracepatch-example"
+
+# Automatically save traces to cache
+auto_save = true
+
+# Display settings
+show_args = true
+show_return = true
+tree_style = "ascii"  # or "unicode"
+
+# Test setup configuration
+# Uncomment and configure to use 'tph setup' command
+# [[test.files]]
+# path = "example.py"
+# functions = ["calculate_fibonacci", "process_data"]
+# 
+# [[test.inputs]]
+# function = "calculate_fibonacci"
+# args = [10]
+# kwargs = {}
+# 
+# [[test.inputs]]
+# function = "process_data"
+# args = [[5, 8, 10]]
+# kwargs = {}

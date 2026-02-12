@@ -6,6 +6,23 @@ your working directory. These logs accumulate over time and serve as a
 persistent record of past traces that you can inspect, compare, or feed
 into other tools.
 
+## Quick access with CLI
+
+The easiest way to work with trace logs is through the `tph` CLI:
+
+```bash
+# List recent traces
+$ tph logs
+
+# View full call tree from a trace
+$ tph tree .tracepatch_cache/trace_20260212_143022_817345.json
+
+# View trace metadata and summary
+$ tph view .tracepatch_cache/trace_20260212_143022_817345.json
+```
+
+See the [CLI documentation](../README.md#command-line-interface) for more details.
+
 ## Where logs are stored
 
 By default, logs go to `.tracepatch_cache/` relative to the current working
@@ -47,7 +64,7 @@ Each log file is a self-contained JSON document:
 
 ```json
 {
-  "tracepatch_version": "0.1.0",
+  "tracepatch_version": "0.2.0",
   "timestamp": "2026-02-12T14:30:22.817345",
   "label": "checkout_flow",
   "call_count": 47,
@@ -156,10 +173,30 @@ with trace(cache=False) as t:
 
 ## Reading logs from the command line
 
-The files are plain JSON. Standard tools work:
+### Using the tracepatch CLI
+
+The `tph` command provides convenient access to traces:
 
 ```bash
-# List all trace logs by date
+# List all traces with metadata
+$ tph logs
+
+# Display a specific trace's call tree
+$ tph tree .tracepatch_cache/trace_20260212_143022_817345.json
+
+# View trace metadata and configuration
+$ tph view .tracepatch_cache/trace_20260212_143022_817345.json
+
+# Filter tree depth for readability
+$ tph tree --max-depth 5 .tracepatch_cache/trace_20260212_143022_817345.json
+```
+
+### Using standard Unix tools
+
+The files are plain JSON, so standard tools work:
+
+```bash
+# List all trace logs by date (newest first)
 ls -lt .tracepatch_cache/
 
 # Pretty-print the most recent one

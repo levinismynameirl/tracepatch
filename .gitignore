@@ -8,12 +8,19 @@ build/
 
 # Virtual environments
 .venv/
+venv/
+env/
 
 # pytest
 .pytest_cache/
 
-# tracepatch
+# tracepatch generated files
 .tracepatch_cache/
+_tracepatch_*.py
+
+# Test/example files (not part of package)
+example.py
+tracepatch-test.toml
 
 # IDE
 .idea/
