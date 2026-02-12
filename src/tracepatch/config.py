@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,41 @@ try:
     import tomli_w
 except ImportError:
     tomli_w = None  # type: ignore
+
+
+def _apply_env_overrides(config: TracepatchConfig) -> None:
+    """Apply environment variable overrides to configuration.
+    
+    Supported environment variables:
+    - TRACEPATCH_ENABLED: 0|1|false|true - Enable/disable tracing (sets max_calls to 0 if disabled)
+    - TRACEPATCH_MAX_DEPTH: int - Override max_depth
+    - TRACEPATCH_MAX_CALLS: int - Override max_calls
+    - TRACEPATCH_MAX_REPR: int - Override max_repr
+    """
+    # Check if tracing is globally disabled
+    enabled = os.environ.get('TRACEPATCH_ENABLED', '').lower()
+    if enabled in ('0', 'false', 'no'):
+        config.max_calls = 0  # Effectively disable tracing
+        return
+    
+    # Override numeric settings if provided
+    if 'TRACEPATCH_MAX_DEPTH' in os.environ:
+        try:
+            config.max_depth = int(os.environ['TRACEPATCH_MAX_DEPTH'])
+        except ValueError:
+            pass
+    
+    if 'TRACEPATCH_MAX_CALLS' in os.environ:
+        try:
+            config.max_calls = int(os.environ['TRACEPATCH_MAX_CALLS'])
+        except ValueError:
+            pass
+    
+    if 'TRACEPATCH_MAX_REPR' in os.environ:
+        try:
+            config.max_repr = int(os.environ['TRACEPATCH_MAX_REPR'])
+        except ValueError:
+            pass
 
 
 @dataclass
