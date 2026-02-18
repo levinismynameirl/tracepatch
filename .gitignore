@@ -13,6 +13,8 @@ env/
 
 # pytest
 .pytest_cache/
+.coverage
+htmlcov/
 
 # tracepatch generated files
 .tracepatch_cache/
@@ -21,6 +23,11 @@ _tracepatch_*.py
 # Test/example files (not part of package)
 example.py
 tracepatch-test.toml
+tests/
+manual_tests/
+
+# Agent workflow (not part of public repo)
+AGENTS.md
 
 # IDE
 .idea/
