@@ -25,8 +25,31 @@ Configuration:
         my_function()
 """
 
-from tracepatch._trace import trace
-from tracepatch.config import load_config, TracepatchConfig
+from tracepatch._pipeline import Pipeline
+from tracepatch._trace import TraceSummary, trace
+from tracepatch.config import ConfigError, TracepatchConfig, load_config
 
-__all__ = ["trace", "load_config", "TracepatchConfig"]
-__version__ = "0.1.0"
+__all__ = [
+    "ConfigError",
+    "Pipeline",
+    "TraceSummary",
+    "TracepatchConfig",
+    "load_config",
+    "trace",
+]
+
+
+def _get_version() -> str:
+    """Read the package version from installed metadata.
+
+    Returns
+    -------
+    str
+        The version string from ``pyproject.toml`` via ``importlib.metadata``.
+    """
+    from importlib.metadata import version as _meta_version
+
+    return _meta_version("tracepatch")
+
+
+__version__: str = _get_version()

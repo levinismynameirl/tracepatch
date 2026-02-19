@@ -16,8 +16,12 @@ env/
 .coverage
 htmlcov/
 
+# Development tools
+.ruff_cache/
+.mypy_cache/
+
 # tracepatch generated files
-.tracepatch_cache/
+.tracepatch/
 _tracepatch_*.py
 
 # Test/example files (not part of package)

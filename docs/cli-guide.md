@@ -1,378 +1,288 @@
 # CLI Guide
 
-The `tph` (tracepatch) command-line interface provides tools for viewing traces and managing test environments.
+The `tph` (or `tracepatch`) command provides tools for viewing, analysing,
+and managing traces from the terminal.
 
-## Available Commands
+## Commands at a Glance
 
-| Command | Description |
-|---------|-------------|
-| `tph logs` | List cached trace logs |
-| `tph view <file>` | View trace metadata and summary |
-| `tph tree <file>` | Display call tree from trace |
+| Command | Purpose |
+|---|---|
+| `tph logs` | List saved trace files |
+| `tph view <file>` | Show trace metadata |
+| `tph tree <file>` | Display the call tree |
+| `tph stats <file>` | Detailed statistics report |
+| `tph diff <a> <b>` | Compare two traces |
+| `tph export <file>` | Export to CSV or HTML |
 | `tph config` | Show current configuration |
-| `tph setup` | Set up automated test environment |
-| `tph disable` | Clean up test environment |
-| `tph help` | Show help information |
+| `tph init` | Create a starter config file |
+| `tph run` | Run traced test environment |
+| `tph clean` | Clean up generated files |
 
-## Command Details
+---
 
-### tph logs
+## `tph logs`
 
-List all cached trace logs with timestamps, labels, and call counts.
-
-```bash
-$ tph logs
-Found 3 trace log(s):
-
-[1] 2026-02-12T14:38:02.618610 | test-run | 47 calls
-    /path/to/.tracepatch_cache/trace_20260212_143802_618610_test-run.json
-
-[2] 2026-02-12T14:27:57.579349 | tracepatch-example | 23 calls
-    /path/to/.tracepatch_cache/trace_20260212_142757_579349_tracepatch-example.json
-
-[3] 2026-02-12T14:24:49.862985 | tracepatch-example | 23 calls
-    /path/to/.tracepatch_cache/trace_20260212_142449_862985_tracepatch-example.json
-```
-
-**Options:**
-- `--cache-dir DIR` - Specify custom cache directory (default: `.tracepatch_cache`)
-- `--limit N` - Maximum number of logs to display (default: 50)
-
-**Examples:**
+List recently saved trace files from `.tracepatch/traces/`.
 
 ```bash
-# List only the 10 most recent traces
-$ tph logs --limit 10
-
-# List traces from a custom directory
-$ tph logs --cache-dir /tmp/my_traces
+tph logs                    # list recent traces
+tph logs --limit 10         # show only 10 most recent
+tph logs --cache-dir /path  # search a custom directory
+tph logs --label "checkout*"  # filter by label (glob)
+tph logs --limited          # only show traces that hit a limit
 ```
 
-### tph view
+### Options
 
-View detailed metadata about a specific trace log.
+| Flag | Description |
+|---|---|
+| `--cache-dir DIR` | Parent directory containing `.tracepatch/` |
+| `--limit N` | Maximum number of logs (default: 50) |
+| `--label PATTERN` | Glob pattern to match trace labels |
+| `--limited` | Only show traces that were limited |
+
+---
+
+## `tph view <file>`
+
+Show metadata and summary for a trace file without rendering the tree.
 
 ```bash
-$ tph view .tracepatch_cache/trace_20260212_143802_618610_test-run.json
+tph view trace.json
+tph view trace.json --json   # include raw JSON dump
 ```
 
-**Output includes:**
-- Timestamp and label
-- Total call count
-- Whether trace was limited (max_calls exceeded)
-- Configuration used (max_depth, max_calls, etc.)
-- Summary of root function calls
+---
 
-**Example output:**
+## `tph tree <file>`
 
-```
-======================================================================
-TRACE LOG DETAILS
-======================================================================
-File: .tracepatch_cache/trace_20260212_143802_618610_test-run.json
-Timestamp: 2026-02-12T14:38:02.618610
-Label: test-run
-Call count: 47
-Was limited: False
-
-Configuration:
-  max_depth: 50
-  max_calls: 20000
-  max_repr: 200
-  ignore_modules: ['urllib3', 'requests']
-
-Root calls:
-  - example.process_data (3 children)
-```
-
-### tph tree
-
-Display the full call tree from a trace log with timing information.
+Display a trace as a readable call tree. This is the primary command
+for exploring what happened during a traced execution.
 
 ```bash
-$ tph tree .tracepatch_cache/trace_20260212_143802_618610_test-run.json
+tph tree trace.json
+tph tree trace.json --color --style unicode
+tph tree trace.json --filter 'myapp.*'
+tph tree trace.json --filter '!logging'
+tph tree trace.json --depth 3
+tph tree trace.json --no-args --self-time
+tph tree trace.json --format html -o report.html
 ```
 
-**Options:**
-- `--max-depth N` - Limit tree depth for readability
-- `--show-args` / `--no-args` - Control argument display
-- `--show-return` / `--no-return` - Control return value display
+### Options
 
-**Examples:**
+| Flag | Description |
+|---|---|
+| `--filter PATTERN` | Module glob (`app.*`) or exclusion (`!stdlib`) |
+| `--depth N` | Limit tree to N levels deep |
+| `--format F` | `text` (default), `json`, or `html` |
+| `--output FILE` | Output file (for HTML format) |
+| `--color` | Colorise by duration (green/yellow/red) |
+| `--style S` | `ascii` (default), `unicode`, or `ansi` |
+| `--no-args` | Hide function arguments |
+| `--no-return` | Hide return values |
+| `--show-source` | Show source file and line number |
+| `--self-time` | Show self-time alongside total time |
+| `--no-stats` | Hide the summary statistics header |
+| `--no-fold` | Disable folding of repeated sibling calls |
+| `--fold-threshold N` | Minimum run to fold (default: 3) |
+| `--collapse N` | Auto-collapse subtrees at depth N |
+
+### Call Folding
+
+When a function is called many times consecutively (e.g. in a loop),
+the tree automatically folds them into a single line:
+
+```
+└── myapp.process(...  [×500]  [avg: 0.12ms, min: 0.08ms, max: 0.31ms])  [60.00ms]
+```
+
+Use `--no-fold` to see every individual call, or `--fold-threshold 10`
+to only fold runs of 10+ identical calls.
+
+### Auto-Collapse
+
+Traces with more than 200 nodes are automatically collapsed to depth 4.
+Use `--collapse N` to choose a different depth, or `--no-fold` plus
+`--depth N` for manual control.
+
+---
+
+## `tph stats <file>`
+
+Print a detailed statistics report including top slowest functions,
+most-called functions, and a module breakdown.
 
 ```bash
-# Show only top 3 levels of calls
-$ tph tree --max-depth 3 trace.json
-
-# Hide arguments for cleaner output
-$ tph tree --no-args trace.json
-
-# Show tree without return values
-$ tph tree --no-return trace.json
+tph stats trace.json
 ```
 
-**Example output:**
+Example output:
 
 ```
-└── example.process_data(items=[3, 5, 7]) -> [2, 5, 13]  [2.34ms]
-    ├── example.calculate_fibonacci(n=3) -> 2  [0.15ms]
-    │   ├── example.calculate_fibonacci(n=2) -> 1  [0.08ms]
-    │   │   ├── example.calculate_fibonacci(n=1) -> 1  [0.02ms]
-    │   │   └── example.calculate_fibonacci(n=0) -> 0  [0.02ms]
-    │   └── example.calculate_fibonacci(n=1) -> 1  [0.02ms]
-    ├── example.calculate_fibonacci(n=5) -> 5  [0.89ms]
-    │   └── [25 nested calls...]
-    └── example.calculate_fibonacci(n=7) -> 13  [1.12ms]
-        └── [41 nested calls...]
+Trace: checkout-flow
+======================================================================
+
+Top 10 slowest functions:
+   1.  db.query                             12.30ms  (×3,  avg 4.10ms,  max 8.20ms)
+   2.  http.request                          8.10ms  (×1,  avg 8.10ms,  max 8.10ms)
+
+Top 10 most called functions:
+   1.  app.validate                          ×1482   (avg 0.02ms,  total 29.60ms)
+
+Module breakdown:
+  myapp                              72 calls ( 48%)   total: 22.10ms
+  db                                 18 calls ( 12%)   total: 15.30ms
 ```
 
-### tph config
+---
 
-Display the current tracepatch configuration loaded from TOML files.
+## `tph diff <file1> <file2>`
+
+Compare two trace files and show what changed.
 
 ```bash
-$ tph config
+tph diff before.json after.json
 ```
 
-**Searches for configuration in:**
-1. `tracepatch.toml` in current or parent directories
-2. `[tool.tracepatch]` section in `pyproject.toml`
+Output shows:
 
-**Options:**
-- `--file PATH` - Check a specific configuration file
-
-**Example output with config file:**
+- `+` — functions present only in the second trace
+- `-` — functions present only in the first trace
+- `~` — functions whose timing or call count changed significantly
 
 ```
-======================================================================
-TRACEPATCH CONFIGURATION
-======================================================================
-✓ Loaded from: /path/to/tracepatch.toml
-
-Tracing behavior:
-  max_depth: 50
-  max_calls: 20000
-  max_repr: 200
-  ignore_modules: urllib3, requests, http
-
-Cache settings:
-  cache: True
-  cache_dir: (default: .tracepatch_cache)
-  auto_save: True
-
-Display settings:
-  show_args: True
-  show_return: True
-  tree_style: ascii
-  default_label: my-app
-
-Test configuration:
-  example.py:
-    - calculate_fibonacci()
-    - process_data()
++ myapp.new_validator()      added      [3.20ms]
+- myapp.old_check()          removed
+~ db.query()                 slower     [0.80ms -> 4.20ms  +425%]
+~ app.process()              calls      [×3 -> ×12]
 ```
 
-**Example output without config file:**
+---
 
-```
-======================================================================
-TRACEPATCH CONFIGURATION
-======================================================================
-ℹ️  Using: default configuration (no config file found)
+## `tph export <file>`
 
-Searched for:
-  - tracepatch.toml
-  - pyproject.toml [tool.tracepatch]
-
-Create a 'tracepatch.toml' file to customize settings.
-
-[Default settings displayed...]
-```
-
-### tph setup
-
-Set up an automated test environment for tracing configured functions.
+Export a trace to a different format.
 
 ```bash
-$ tph setup
+tph export trace.json --format csv -o trace.csv
+tph export trace.json --format html -o report.html
 ```
 
-**Prerequisites:**
-- Must have a `tracepatch.toml` or `pyproject.toml` with `[tool.tracepatch]` section
-- Configuration must include `[[test.files]]` sections
+### Formats
 
-**What it does:**
-1. Checks Git status (warns about staged changes)
-2. Validates that configured files and functions exist
-3. Creates `__init__.py` if needed
-4. Generates `_tracepatch_filetotest.py` with wrapper functions
-5. Saves setup state to `.tracepatch_cache/setup_state.json`
+| Format | Description |
+|---|---|
+| `csv` | Flat CSV with columns: module, function, args, return_value, elapsed_ms, depth, parent |
+| `html` | Interactive HTML tree (same as `tph tree --format html`) |
 
-**Example output:**
+---
 
-```
-Setting up tracepatch test environment...
+## `tph config`
 
-ℹ️  Note: You have unstaged Git changes.
-   tracepatch will create temporary files in your working directory.
-
-Validating test configuration...
-✓ Found example.py
-  └─ calculate_fibonacci(n)
-  └─ process_data(items)
-
-Generating test runner: _tracepatch_filetotest.py
-✓ Created test runner
-
-======================================================================
-Setup complete!
-======================================================================
-
-⚠️  IMPORTANT: Do not delete the .tracepatch_cache folder!
-   It contains setup state needed for cleanup with 'tph disable'
-
-Run tests with:
-  python _tracepatch_filetotest.py
-
-Cleanup with:
-  tph disable
-```
-
-**Error handling:**
-
-If no config file found:
-```
-❌ Error: No tracepatch configuration file found!
-
-What to do:
-  1. Create a 'tracepatch.toml' file in your project directory
-  2. OR add a [tool.tracepatch] section to your pyproject.toml
-
-[Example configuration shown...]
-```
-
-### tph disable
-
-Clean up the test environment created by `tph setup`.
+Show the active configuration, including where it was loaded from and
+all effective values.
 
 ```bash
-$ tph disable
+tph config                        # show current config
+tph config --file custom.toml     # load a specific file
+tph config --validate             # validate and exit (for CI)
 ```
 
-**What it does:**
-1. Checks Git status (warns about staged changes)
-2. Removes generated files (`_tracepatch_filetotest.py`)
-3. Removes `__init__.py` if it was created by setup
-4. Restores any modified files
-5. Removes setup state (but keeps trace logs)
+`--validate` exits with code 0 if valid, 1 if invalid.
 
-**Example output:**
+---
 
-```
-Cleaning up tracepatch test environment...
+## `tph init`
 
-✓ Removed _tracepatch_filetotest.py
-✓ Removed setup state
-
-======================================================================
-Cleanup complete!
-======================================================================
-
-The .tracepatch_cache folder and trace logs have been preserved.
-```
-
-**Git safety:**
-
-If you have staged changes:
-```
-⚠️  Warning: You have staged Git changes:
-   - example.py
-   - src/module.py
-
-   tracepatch will remove generated files that may affect your Git state.
-   Continue? [y/N]: 
-```
-
-### tph help
-
-Show comprehensive help information with examples.
+Create a starter `tracepatch.toml`. Interactive by default — asks for
+your source directory, trace mode, and modules to ignore.
 
 ```bash
-$ tph help
+tph init              # interactive setup
+tph init --yes        # skip prompts, use defaults
+tph init --force      # overwrite existing file
 ```
 
-Displays:
-- All available commands
-- Common usage examples
-- Configuration examples
-- Links to documentation
+---
+
+## `tph run`
+
+Set up and run the traced test environment using `[[test.files]]` from
+your configuration. Generates `.tracepatch/trace_runner.py` and executes
+the configured functions with tracing enabled.
+
+```bash
+tph run
+```
+
+This is the replacement for the old `tph setup` command. The backward
+compatible alias `tph setup` still works.
+
+---
+
+## `tph clean`
+
+Clean up generated files and trace data.
+
+```bash
+tph clean                     # remove setup state (state.json)
+tph clean --traces            # remove all trace JSON files
+tph clean --older-than 7d     # remove traces older than 7 days
+tph clean --all               # remove entire .tracepatch/ directory
+```
+
+The backward-compatible alias `tph disable` still works for the basic
+cleanup mode.
+
+### Duration Format
+
+For `--older-than`, use a number followed by a unit:
+
+- `7d` — 7 days
+- `24h` — 24 hours
+- `30m` — 30 minutes
+
+---
+
+## Exit Codes
+
+All commands exit with `0` on success and `1` on any error. Error
+messages are written to stderr.
+
+---
 
 ## Common Workflows
 
-### Debugging a specific execution
+### Trace a function and view immediately
 
-```bash
-# 1. Add tracing to your code
-# with trace(label="bug-investigation") as t:
-#     problematic_function()
+```python
+from tracepatch import trace
 
-# 2. Run your code
-$ python my_script.py
-
-# 3. View the trace
-$ tph logs
-$ tph tree .tracepatch_cache/trace_20260212_143802_618610_bug-investigation.json
+with trace(label="debug-checkout") as t:
+    checkout(cart)
+print(t.tree())
 ```
 
-### Testing multiple functions
+### Save traces and review later
 
 ```bash
-# 1. Configure tests in tracepatch.toml
-# [[test.files]]
-# path = "mymodule.py"
-# functions = ["func1", "func2", "func3"]
-
-# 2. Set up test environment
-$ tph setup
-
-# 3. Run the generated tests
-$ python _tracepatch_filetotest.py
-
-# 4. Review traces
-$ tph logs
-$ tph tree .tracepatch_cache/trace_<timestamp>_test-run.json
-
-# 5. Clean up
-$ tph disable
+# In your code: traces are auto-saved when cache=true (the default)
+# Then from the terminal:
+tph logs
+tph tree .tracepatch/traces/debug-checkout_20260219_143022_a1b2c3.json --color
 ```
 
-### Comparing before/after changes
+### Compare before and after a refactor
 
 ```bash
-# 1. Trace before changes
-$ python my_script.py  # with trace() block
-$ tph logs  # Note the trace file
-
-# 2. Make your changes
-
-# 3. Trace after changes
-$ python my_script.py
-
-# 4. Compare
-$ tph view trace_before.json
-$ tph view trace_after.json
-
-# Or use diff on the JSON files
-$ diff <(python -m json.tool trace_before.json) \
-       <(python -m json.tool trace_after.json)
+# Run your code before the change, save trace
+# Run your code after the change, save trace
+tph diff before.json after.json
 ```
 
-## Tips
+### Validate config in CI
 
-- Use the `tph` alias instead of `tracepatch` for faster typing
-- Add meaningful labels to traces: `trace(label="checkout-flow")`
-- Use `--limit` with `tph logs` for faster output when you have many traces
-- The `.tracepatch_cache/` directory is automatically added to `.gitignore`
-- Keep `.tracepatch_cache/` after `tph disable` - traces are valuable for analysis
-- Use `--max-depth` with `tph tree` for cleaner output on deep call stacks
-- Check `tph config` first to verify your TOML configuration is loaded correctly
+```bash
+tph config --validate || exit 1
+```

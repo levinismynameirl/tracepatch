@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracepatch"
-version = "0.3.4"
+version = "0.3.5"
 description = "Focused, opt-in runtime call tracing for a single execution context."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "tracepatch contributors" },
+    { name = "levinismynameirl" },
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -34,6 +34,9 @@ dependencies = [
 tracepatch = "tracepatch.cli:main"
 tph = "tracepatch.cli:main"
 
+[project.entry-points."pytest11"]
+tracepatch = "tracepatch.pytest_plugin"
+
 [project.urls]
 Homepage = "https://github.com/levinismynameirl/tracepatch"
 Documentation = "https://github.com/levinismynameirl/tracepatch#readme"
@@ -46,12 +49,50 @@ packages = ["src/tracepatch"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Suppress warnings about src/ dataclasses named Test* being found by pytest.
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "ruff>=0.4",
 ]
 config-save = [
     "tomli-w>=1.0.0",
 ]
+pytest = [
+    "pytest>=7.0",
+]
+notebook = [
+    "ipython>=7.0",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "E501",  # line length enforced by formatter
+    "B008",  # do not perform function calls in default args
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

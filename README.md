@@ -1,44 +1,75 @@
 # tracepatch
 
-Focused, opt-in runtime call tracing for a single execution context with production-ready safety features.
+**See exactly what your code did — every call, argument, return value, and timing — in one readable tree.**
 
-tracepatch is a debugging tool that records function calls, arguments, return values, and timing for one specific scope (a request handler, a CLI command, a background task) and produces a readable call tree. It's not a replacement for OpenTelemetry, structured logging, or APM dashboards. Think of it as a scalpel: you point it at one execution path that is misbehaving, and it tells you exactly what happened. Leave tracepatch installed in production - it has **zero overhead when inactive**.
+tracepatch records function calls for a single execution scope (a request, a CLI command, a background task) and produces a call tree you can actually read. It's not OpenTelemetry. It's not cProfile. It's a scalpel: point it at the code path that's misbehaving and it tells you exactly what happened.
+
+Zero runtime dependencies. Zero overhead when inactive. Leave it installed in production.
+
+## When to Use / When NOT to Use
+
+**Use tracepatch when you need to:**
+- Debug why a specific request is slow or returning wrong results
+- Understand the call flow through unfamiliar code
+- Compare execution patterns before and after a refactor
+- Trace exactly what happens inside a failing test
+
+**Don't use tracepatch for:**
+- Distributed tracing across services → use OpenTelemetry
+- Statistical profiling of hot paths → use cProfile or py-spy
+- Audit logging for compliance → use structured logging
+
+## Quick Start
+
+```python
+from tracepatch import trace
+
+def load_user(uid):
+    return {"id": uid, "name": "Alice"}
+
+def validate(user):
+    return user["name"] != ""
+
+def handle_request(uid):
+    user = load_user(uid)
+    validate(user)
+    return user
+
+with trace(label="debug-request") as t:
+    handle_request(42)
+
+print(t.tree())
+```
+
+```
+Trace: debug-request
+────────────────────────────────────────────────────────────────────────
+Recorded:     3 calls across 1 modules    | Duration: 0.05ms
+Max depth:    1 levels                    | Unique functions: 3
+Slowest:      __main__.handle_request [0.05ms]| Most called: __main__.load_user [×1]
+────────────────────────────────────────────────────────────────────────
+
+└── __main__.handle_request(uid=42) -> {'id': 42, 'name': 'Alice'}  [0.05ms]
+    ├── __main__.load_user(uid=42) -> {'id': 42, 'name': 'Alice'}  [0.01ms]
+    └── __main__.validate(user={'id': 42, ...}) -> True  [0.01ms]
+```
 
 ## Features
 
-### Core Capabilities
-- **Zero overhead when inactive** - profiling hook only active inside `trace()` blocks
-- **Pure Python** - no external dependencies for core tracing (optional TOML support via `tomli` on Python <3.11)
-- **Full async/await support** - works in synchronous and asynchronous code
-- **Context-isolated tracing** - concurrent async tasks don't interfere (uses `contextvars`)
-- **Thread-safe** - each trace gets a unique ID for correlation in multi-threaded scenarios
-
-### Safety & Performance
-- **Built-in safety limits:** `max_depth`, `max_calls`, `max_time` - auto-disable if exceeded
-- **Error resilience** - catches circular references, `__repr__` failures, doesn't affect traced code
-- **Production-safe** - environment variable `TRACEPATCH_ENABLED=0` disables globally
-- **Memory-efficient** - safe repr with truncation, circular reference detection
-
-### Multiple Output Formats
-- **Human-readable ASCII trees** with timing information
-- **Colorized output** - green (fast), yellow (slow), red (very slow) based on duration
-- **JSON export** for machine processing and custom analysis
-- **HTML output** - interactive collapsible tree view with syntax highlighting
-
-### Developer Experience
-- **Decorator support** - use `@trace()` on functions, async functions, generators, async generators
-- **Powerful CLI** (`tph`/`tracepatch`) - view logs, display trees, filter/limit depth
-- **Tree filtering** - `--filter 'myapp.*'` or `--filter '!unittest'` to focus on relevant calls
-- **Depth limiting** - `--depth 3` to show only top-level calls
-- **TOML configuration** via `tracepatch.toml` or `pyproject.toml`
-- **Environment overrides** - `TRACEPATCH_MAX_DEPTH`, `TRACEPATCH_MAX_CALLS`, etc.
-- **Allowlist mode** - `include_modules` for tracing only specific modules
-
-### Testing & Automation
-- **Auto test setup** - `tph setup` instruments functions from config
-- **Custom test scripts** - `[test.custom]` section for complete control  
-- **Automatic caching** - traces saved to `.tracepatch_cache/` for later review
-- **Git-aware safety** - warns about staged changes before operations
+- **Zero overhead when inactive** — `sys.settrace` hook only installed inside `trace()` blocks
+- **Pure Python** — no runtime dependencies (optional `tomli` on Python <3.11)
+- **Async + sync** — works with `async/await`, generators, and async generators via `contextvars`
+- **Thread-safe** — each trace is isolated with a unique ID
+- **Built-in safety** — `max_depth`, `max_calls`, `max_time` auto-disable before damage
+- **Call folding** — repeated calls in loops fold into `[×500]` with min/avg/max timing
+- **Self-time** — see where time is actually spent vs. passed through to children
+- **Statistics** — summary header with call count, slowest function, module breakdown
+- **Multiple outputs** — ASCII tree, Unicode tree, coloured ANSI, JSON, HTML, CSV
+- **Source locations** — optional file:line annotation for each call
+- **Trace comparison** — `tph diff before.json after.json`
+- **CLI** (`tph`) — logs, tree, stats, diff, export, config, init, run, clean
+- **TOML config** — `tracepatch.toml` or `pyproject.toml [tool.tracepatch]`
+- **Environment overrides** — `TRACEPATCH_ENABLED=0` to disable globally
 
 ## Installation
 
@@ -211,52 +242,20 @@ tph init
 
 ## CLI Usage
 
-### List Traces
-
 ```bash
-tph logs                    # List recent traces
-tph logs --limit 10         # Show only 10 most recent
-tph logs --cache-dir /path  # Search custom directory
-```
-
-### View Trace Tree
-
-```bash
-tph tree trace.json         # Display call tree
-tph tree trace.json --color # Colorize by duration
-tph tree trace.json --filter 'myapp.*'  # Show only myapp calls
-tph tree trace.json --filter '!logging' #  Exclude logging calls
-tph tree trace.json --depth 3           # Limit to 3 levels
-```
-
-### Export Formats
-
-```bash
-tph tree trace.json --format json       # Machine-readable JSON
-tph tree trace.json --format html -o trace.html  # Interactive HTML
-```
-
-### Configuration
-
-```bash
-tph config              # Show current configuration
-tph config --file custom.toml  # Load specific config
-```
-
-### Test Setup
-
-```bash
-tph setup               # Generate test runner from config
-tph disable             # Clean up test environment
-```
-
-### Environment Variables
-
-```bash
-export TRACEPATCH_ENABLED=0        # Disable globally
-export TRACEPATCH_MAX_DEPTH=10     # Override max_depth
-export TRACEPATCH_MAX_CALLS=5000   # Override max_calls
-export TRACEPATCH_COLOR=1          # Enable colored output
+tph logs                           # list saved traces
+tph tree trace.json --color        # coloured call tree
+tph tree trace.json --self-time    # show self-time
+tph tree trace.json --style unicode --no-args   # compact view
+tph tree trace.json --filter 'myapp.*'          # only myapp calls
+tph tree trace.json --filter '!logging'         # exclude logging
+tph tree trace.json --depth 3                   # limit depth
+tph stats trace.json               # detailed statistics
+tph diff before.json after.json    # compare two traces
+tph export trace.json --format csv -o trace.csv
+tph config --validate              # validate config (CI)
+tph init                           # create tracepatch.toml
+tph clean --older-than 7d          # remove old traces
 ```
 
 ## Advanced Usage
@@ -438,29 +437,22 @@ def test_complex_workflow():
 ## Performance
 
 - **Overhead when inactive:** ~0ns (no hooks installed)
-- **Overhead when active:** ~5-10μs per function call
+- **Overhead when active:** ~5–10μs per function call
 - **Memory:** ~1KB per captured call (includes args/return repr)
 - **Recommended limits:**
   - `max_calls=10000` for typical requests (~10ms overhead)
   - `max_depth=30` to avoid deep recursion overhead
   - `max_time=60` to auto-stop runaway traces
 
-## Comparison With Other Tools
+## Documentation
 
-| Tool | Use Case | Overhead | Scope |
-|------|----------|----------|-------|
-| **tracepatch** | Focused debugging, one execution | Low | Single scope |
-| OpenTelemetry | Distributed tracing, observability | Medium | Multi-service |
-| cProfile | Performance profiling | Medium | Whole program |
-| pdb/breakpoint | Interactive debugging | N/A | Manual |
-| logging | Structured events | Low | Whole program |
-
-## Limitations
-
-- **Not for profiling:** Use `cProfile` or `py-spy` for performance analysis
-- **Not for distributed tracing:** Use OpenTelemetry for multi-service workflows  
-- **Not for audit logging:** Use structured logging for compliance
-- **Synchronous tracing only:** No cross-task tracing (each async task isolated)
+- [Quickstart](docs/quickstart.md) — first trace in 60 seconds
+- [Configuration Reference](docs/configuration.md) — every option explained
+- [CLI Guide](docs/cli-guide.md) — all commands and flags
+- [Reading the Call Tree](docs/reading-tree.md) — understanding output
+- [Reading Trace Logs](docs/reading-logs.md) — JSON schema reference
+- [API Reference](docs/api-reference.md) — Python API docs
+- [Changelog](CHANGELOG.md) — version history
 
 ## Contributing
 
@@ -469,36 +461,3 @@ Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
-
-## Changelog
-
-### v0.3.2 (2026-02-12)
-
-**Bug Fixes:**
-- Fixed double-nested cache directory issue
-- Fixed `tph logs` not finding traces
-- Added `unittest.mock` to default ignore list  
-- Custom test scripts now respected by `tph setup`
-
-**New Features:**
-- `@trace()` decorator support (functions, async, generators, async generators)
-- Tree filtering: `tph tree --filter 'pattern'`
-- Depth limiting: `tph tree --depth N`
-- Multiple output formats: JSON, HTML, colored text
-- `max_time` parameter for auto-stop
-- Circular reference detection
-- Improved error handling (never crashes traced code)
-- `include_modules` allowlist mode
-- Environment variable overrides
-- `tph init` command for starter config
-- Unique `trace_id` for thread correlation
-- Colorized output by duration
-
-**Improvements:**
-- Better `__repr__` failure handling
-- Thread-safe trace isolation
-- Enhanced CLI help and error messages
-
-### v0.1.0 (2025-01-15)
-
-Initial release

@@ -16,7 +16,7 @@ max_repr = 200
 # Enable automatic caching of traces
 cache = true
 
-# Custom cache directory (default: .tracepatch_cache)
+# Custom cache directory (default: .tracepatch)
 # cache_dir = ".traces"
 
 # Default label for traces (appears in logs)

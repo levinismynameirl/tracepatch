@@ -1,560 +1,236 @@
-# Configuration Guide
+# Configuration Reference
 
-tracepatch supports configuration via TOML files, allowing you to set default tracing behavior, display preferences, and automated test setups.
+tracepatch is configured through TOML files, environment variables, or
+direct Python keyword arguments. This page documents every option.
 
-## Configuration File Locations
+## Configuration Precedence
 
-tracepatch automatically searches for configuration in the following order:
+When multiple sources provide the same setting, the order is:
 
-1. **`tracepatch.toml`** in the current directory
-2. **`pyproject.toml`** with a `[tool.tracepatch]` section in the current directory
-3. **Parent directories** - searches upward for the above files
+1. **Explicit Python keyword** — `trace(max_depth=5)` always wins
+2. **Environment variables** — `TRACEPATCH_MAX_DEPTH=5`
+3. **`tracepatch.toml`** — searched in CWD, then parent directories
+4. **`pyproject.toml` `[tool.tracepatch]`** — fallback
+5. **Built-in defaults** — always present
 
-You can also specify an explicit configuration file:
+## Creating a Config File
 
-```python
-from tracepatch import load_config
-
-config, path = load_config(path="path/to/config.toml")
+```bash
+tph init          # interactive prompts
+tph init --yes    # skip prompts, use defaults
 ```
 
-## Basic Configuration
-
-Create a `tracepatch.toml` file in your project root:
+## Full Schema
 
 ```toml
-# Tracing behavior
-ignore_modules = ["urllib3", "requests", "http.client"]
-max_depth = 50
-max_calls = 20000
-max_repr = 200
+# ── Tracing behaviour ──────────────────────────────────────────────
+ignore_modules = ["logging", "urllib3"]   # Module prefixes to exclude
+# include_modules = ["myapp"]            # Allowlist mode (empty = trace all)
+max_depth = 30          # Max call-stack nesting depth
+max_calls = 10000       # Stop tracing after this many calls
+max_repr = 120          # Max length for repr() of args/returns
+# max_repr_args = 80    # Override max_repr for arguments only
+# max_repr_return = 200 # Override max_repr for return values only
+max_time = 60.0         # Stop after this many seconds
 
-# Cache settings
-cache = true
-cache_dir = ".tracepatch_cache"
-auto_save = true
+# ── Cache / storage ────────────────────────────────────────────────
+cache = true            # Auto-save traces to .tracepatch/traces/
+auto_save = true        # Save on context-manager exit
+# cache_dir = ".tracepatch"  # Override trace storage directory
 
-# Display settings
-show_args = true
-show_return = true
-tree_style = "ascii"
-default_label = "my-app"
-```
+# ── Display ────────────────────────────────────────────────────────
+show_args = true        # Show function arguments in tree output
+show_return = true      # Show return values in tree output
+tree_style = "ascii"    # "ascii", "unicode", or "ansi"
+color = false           # Colorise tree output by duration
+# default_label = "my-app"  # Default label for all traces
 
-## Configuration Options
-
-### Tracing Behavior
-
-#### `ignore_modules` (list of strings)
-**Default:** `[]`
-
-List of module name prefixes to exclude from tracing. Any function whose module starts with one of these prefixes will not be recorded.
-
-```toml
-# Ignore all stdlib logging and HTTP libraries
-ignore_modules = ["logging", "urllib3", "http", "ssl"]
-```
-
-Common modules to ignore:
-- `"logging"` - Standard library logging
-- `"urllib3"`, `"requests"` - HTTP client libraries
-- `"http"`, `"ssl"` - Low-level networking
-- `"json"`, `"yaml"` - Serialization (if very noisy)
-- `"_pytest"` - pytest internals when debugging tests
-
-#### `max_depth` (integer)
-**Default:** `30`
-
-Maximum call stack depth to record. Calls deeper than this are silently skipped. Useful for preventing excessive nesting in recursive functions.
-
-```toml
-# Allow deeper recursion tracing
-max_depth = 100
-
-# Or limit for quick overviews
-max_depth = 10
-```
-
-#### `max_calls` (integer)
-**Default:** `10000`
-
-Maximum total number of function calls to record. When this limit is reached, tracing is automatically disabled to prevent runaway overhead. The trace will be marked as "limited".
-
-```toml
-# For large operations
-max_calls = 50000
-
-# For quick traces
-max_calls = 1000
-```
-
-#### `max_repr` (integer)
-**Default:** `120`
-
-Maximum character length for `repr()` of arguments and return values. Longer representations are truncated with `...`.
-
-```toml
-# More detail in traces
-max_repr = 500
-
-# Minimal output
-max_repr = 50
-```
-
-### Cache Settings
-
-#### `cache` (boolean)
-**Default:** `true`
-
-Whether to automatically save traces to disk. When `true`, each completed trace is saved to a JSON file in the cache directory.
-
-```toml
-# Disable caching (useful for benchmarks/tests)
-cache = false
-```
-
-#### `cache_dir` (string, optional)
-**Default:** `".tracepatch_cache"`
-
-Custom directory for storing trace logs. Relative paths are relative to the current working directory.
-
-```toml
-# Custom cache location
-cache_dir = ".traces"
-
-# Absolute path
-cache_dir = "/tmp/my_traces"
-```
-
-#### `auto_save` (boolean)
-**Default:** `true`
-
-Automatically save traces when the `trace()` context exits. If `false`, you must manually call `t.to_json()`.
-
-```toml
-# Manual save control
-auto_save = false
-```
-
-### Display Settings
-
-#### `show_args` (boolean)
-**Default:** `true`
-
-Show function arguments in tree output and trace logs.
-
-```toml
-# Hide arguments for cleaner output
-show_args = false
-```
-
-#### `show_return` (boolean)
-**Default:** `true`
-
-Show return values in tree output and trace logs.
-
-```toml
-# Hide return values
-show_return = false
-```
-
-#### `tree_style` (string)
-**Default:** `"ascii"`
-
-Tree rendering style. Options:
-- `"ascii"` - ASCII box characters (`|`, `+`, `-`)
-- `"unicode"` - Unicode box drawing characters (`│`, `├`, `─`)
-
-```toml
-# Use Unicode for prettier trees
-tree_style = "unicode"
-```
-
-#### `default_label` (string, optional)
-**Default:** `null`
-
-Default label applied to all traces unless overridden. Labels appear in log filenames and `tph logs` output.
-
-```toml
-# All traces get this label by default
-default_label = "my-application"
-```
-
-## Test Configuration
-
-Test configuration enables the `tph setup` / `tph disable` workflow for automated function testing.
-
-### Basic Test Setup
-
-```toml
+# ── Test runner (`tph run`) ────────────────────────────────────────
 [[test.files]]
-path = "mymodule.py"
-functions = ["function1", "function2"]
+path = "myapp/core.py"
+functions = ["process", "validate"]
 
-[[test.files]]
-path = "database.py"
-functions = ["connect", "query", "disconnect"]
-```
-
-### With Custom Inputs
-
-Provide specific arguments for testing:
-
-```toml
-[[test.files]]
-path = "calculator.py"
-functions = ["add", "multiply", "divide"]
-
-# Custom test inputs
 [[test.inputs]]
-function = "add"
-args = [5, 3]
+function = "process"
+args = [42, "hello"]
 kwargs = {}
 
-[[test.inputs]]
-function = "multiply"
-args = [4, 7]
-kwargs = {}
-
-[[test.inputs]]
-function = "divide"
-args = [10, 2]
-kwargs = {check_zero = true}
+[test.custom]
+enabled = false
+script = ""
 ```
 
-### Auto-Generated Inputs
+## Option Reference
 
-If you don't specify `[[test.inputs]]` for a function, tracepatch will attempt to generate reasonable default values:
+### `ignore_modules`
 
-- `int` / `float` parameters → `0`
-- `str` parameters → `"test"`
-- `bool` parameters → `True`
-- `list` parameters → `[]`
-- `dict` parameters → `{}`
-- Other types → `None`
-
-### Multiple Files Example
+- **Type:** `list[str]`
+- **Default:** `[]`
+- **Description:** Module name prefixes to exclude from tracing. Any call
+  whose module starts with one of these strings is silently skipped.
 
 ```toml
-[[test.files]]
-path = "auth.py"
-functions = ["login", "logout", "validate_token"]
-
-[[test.files]]
-path = "api/handlers.py"
-functions = ["handle_get", "handle_post"]
-
-[[test.files]]
-path = "utils/helpers.py"
-functions = ["parse_date", "format_response"]
-
-# Provide inputs only where needed
-[[test.inputs]]
-function = "login"
-args = ["testuser", "password123"]
-kwargs = {}
-
-[[test.inputs]]
-function = "parse_date"
-args = ["2026-02-12"]
-kwargs = {}
+ignore_modules = ["logging", "urllib3", "ssl"]
 ```
 
-## Using Configuration in Code
+### `include_modules`
 
-### Load and use configuration
+- **Type:** `list[str]`
+- **Default:** `[]` (trace everything)
+- **Description:** When non-empty, **only** modules matching one of these
+  prefixes are traced. All others are ignored. Takes priority over
+  `ignore_modules`.
 
-```python
-from tracepatch import trace, load_config
-
-# Load configuration from TOML files
-config, config_path = load_config()
-
-if config_path:
-    print(f"Loaded config from: {config_path}")
-else:
-    print("Using default configuration")
-
-# Use configuration with trace
-with trace(**config.to_trace_kwargs()) as t:
-    my_function()
-
-print(t.tree())
+```toml
+include_modules = ["myapp", "mylib"]
 ```
 
-### Override specific settings
+### `max_depth`
 
-```python
-from tracepatch import trace, load_config
+- **Type:** `int`
+- **Default:** `30`
+- **Valid range:** `1` – `1000`
+- **Description:** Maximum call-stack nesting depth to record. Calls
+  deeper than this are silently ignored.
 
-config, _ = load_config()
+### `max_calls`
 
-# Use config but override label
-trace_kwargs = config.to_trace_kwargs()
-trace_kwargs['label'] = 'special-debug-session'
+- **Type:** `int`
+- **Default:** `10000`
+- **Valid range:** `0` – `1000000`
+- **Description:** Stop recording after this many function calls. The
+  trace continues to run but no new nodes are added. A value of `0`
+  disables tracing entirely (zero overhead).
 
-with trace(**trace_kwargs) as t:
-    my_function()
+### `max_repr`
+
+- **Type:** `int`
+- **Default:** `120`
+- **Description:** Maximum character length for `repr()` of arguments and
+  return values. Longer strings are truncated with `...`.
+
+### `max_repr_args`
+
+- **Type:** `int | null`
+- **Default:** `null` (falls back to `max_repr`)
+- **Description:** Override `max_repr` for function argument strings only.
+  Useful when you want shorter args but longer return values.
+
+### `max_repr_return`
+
+- **Type:** `int | null`
+- **Default:** `null` (falls back to `max_repr`)
+- **Description:** Override `max_repr` for return value strings only.
+
+### `max_time`
+
+- **Type:** `float`
+- **Default:** `60.0`
+- **Description:** Maximum wall-clock seconds before tracing automatically
+  stops. Prevents runaway traces in production.
+
+### `cache`
+
+- **Type:** `bool`
+- **Default:** `true`
+- **Description:** Whether to auto-save traces to `.tracepatch/traces/`.
+
+### `auto_save`
+
+- **Type:** `bool`
+- **Default:** `true`
+- **Description:** Save on context-manager `__exit__`. When `false`, call
+  `t.to_json(path)` manually.
+
+### `cache_dir`
+
+- **Type:** `str | null`
+- **Default:** `null` (uses `.tracepatch`)
+- **Description:** Override the parent directory for trace storage.
+
+### `show_args`
+
+- **Type:** `bool`
+- **Default:** `true`
+- **Description:** Include function arguments in tree/HTML output.
+
+### `show_return`
+
+- **Type:** `bool`
+- **Default:** `true`
+- **Description:** Include return values in tree/HTML output.
+
+### `tree_style`
+
+- **Type:** `str`
+- **Default:** `"ascii"`
+- **Valid values:** `"ascii"`, `"unicode"`, `"ansi"`
+- **Description:** Tree connector style.
+  - `ascii` — `├──`, `└──` (widest compatibility)
+  - `unicode` — `├─`, `└─` (compact box-drawing)
+  - `ansi` — same as `unicode` with dim-coloured connectors
+
+### `color`
+
+- **Type:** `bool`
+- **Default:** `false`
+- **Description:** Colorise tree output by call duration (green/yellow/red).
+  Always disabled when stdout is not a TTY, regardless of this setting.
+
+### `default_label`
+
+- **Type:** `str | null`
+- **Default:** `null`
+- **Description:** Default label applied to all `trace()` calls that don't
+  specify their own. Supports template variables:
+  - `{hostname}` — `socket.gethostname()`
+  - `{pid}` — `os.getpid()`
+  - `{timestamp}` — ISO 8601 timestamp
+
+```toml
+default_label = "worker-{hostname}-{pid}"
 ```
 
-### Access configuration values
+## `pyproject.toml` Integration
 
-```python
-from tracepatch import load_config
-
-config, _ = load_config()
-
-# Access configuration attributes
-print(f"Max depth: {config.max_depth}")
-print(f"Max calls: {config.max_calls}")
-print(f"Ignored modules: {config.ignore_modules}")
-
-# Check test configuration
-for file_config in config.test.files:
-    print(f"Test file: {file_config.path}")
-    print(f"Functions: {', '.join(file_config.functions)}")
-```
-
-## Configuration in pyproject.toml
-
-Instead of a separate `tracepatch.toml`, you can add configuration to your existing `pyproject.toml`:
+All options can go under `[tool.tracepatch]`:
 
 ```toml
 [tool.tracepatch]
-ignore_modules = ["urllib3", "requests"]
 max_depth = 50
 max_calls = 20000
-cache = true
-default_label = "my-app"
+ignore_modules = ["urllib3"]
 
 [[tool.tracepatch.test.files]]
-path = "mymodule.py"
-functions = ["my_function"]
-
-[[tool.tracepatch.test.inputs]]
-function = "my_function"
-args = [42]
-kwargs = {}
+path = "myapp/core.py"
+functions = ["process"]
 ```
 
-## Environment-Specific Configuration
+## Environment Variables
 
-You can maintain different configurations for different purposes:
+| Variable | Maps to | Example |
+|---|---|---|
+| `TRACEPATCH_ENABLED` | Enable/disable | `0` or `1` |
+| `TRACEPATCH_MAX_DEPTH` | `max_depth` | `10` |
+| `TRACEPATCH_MAX_CALLS` | `max_calls` | `5000` |
+| `TRACEPATCH_MAX_REPR` | `max_repr` | `200` |
+| `TRACEPATCH_MAX_TIME` | `max_time` | `30` |
+| `TRACEPATCH_LABEL` | `default_label` | `"my-app"` |
+| `TRACEPATCH_OUTPUT_DIR` | `cache_dir` | `"/tmp/traces"` |
+| `TRACEPATCH_NO_CACHE` | `cache=false` | `1` |
+| `TRACEPATCH_COLOR` | `color` | `1` |
 
-### tracepatch.toml (production-safe defaults)
-```toml
-max_depth = 30
-max_calls = 10000
-ignore_modules = ["logging", "urllib3"]
-cache = true
-```
+Environment variables override TOML settings but are overridden by
+explicit Python keyword arguments.
 
-### tracepatch-debug.toml (deep debugging)
-```toml
-max_depth = 100
-max_calls = 50000
-max_repr = 500
-ignore_modules = []  # Don't ignore anything
-cache = true
-default_label = "deep-debug"
-```
-
-### tracepatch-test.toml (automated testing)
-```toml
-max_depth = 50
-max_calls = 20000
-cache = true
-default_label = "test-run"
-
-[[test.files]]
-path = "mymodule.py"
-functions = ["func1", "func2"]
-```
-
-Load specific config:
-
-```python
-config, _ = load_config(path="tracepatch-debug.toml")
-```
-
-Or use environment variables:
+## Validation
 
 ```bash
-# Set config path via environment
-export TRACEPATCH_CONFIG="tracepatch-debug.toml"
+tph config --validate   # exits 0 if valid, 1 if invalid
 ```
 
-## Validation and Errors
-
-### Check your configuration
-
-```bash
-$ tph config
-```
-
-This displays your current configuration and shows whether a config file was found.
-
-### Common issues
-
-**No config file found:**
-```
-ℹ️  Using: default configuration (no config file found)
-
-Searched for:
-  - tracepatch.toml
-  - pyproject.toml [tool.tracepatch]
-```
-
-**Solution:** Create a `tracepatch.toml` file or add `[tool.tracepatch]` to `pyproject.toml`.
-
-**Invalid TOML syntax:**
-
-If your TOML file has syntax errors, tracepatch will silently fall back to defaults. Validate your TOML:
-
-```bash
-# Install tomli (Python <3.11) or use Python 3.11+
-python -c "import tomllib; tomllib.load(open('tracepatch.toml', 'rb'))"
-```
-
-**Missing test configuration:**
-
-```
-❌ Error: No test files configured!
-```
-
-**Solution:** Add `[[test.files]]` sections to your config.
-
-## Best Practices
-
-### Start with defaults
-
-Begin with minimal config and add settings as needed:
-
-```toml
-# Minimal starting config
-cache = true
-default_label = "my-app"
-```
-
-### Use labels consistently
-
-Choose a label strategy:
-- Project name: `default_label = "myapp"`
-- Environment: `default_label = "myapp-staging"`
-- Team: `default_label = "backend-team"`
-
-### Ignore noisy modules
-
-Find noisy modules by looking at traces, then add to `ignore_modules`:
-
-```toml
-# Common noisy modules
-ignore_modules = [
-    "logging",
-    "urllib3",
-    "requests",
-    "http",
-    "ssl",
-    "socketserver",
-]
-```
-
-### Set realistic limits
-
-Balance detail vs. performance:
-
-```toml
-# Moderate limits for most use cases
-max_depth = 50
-max_calls = 20000
-max_repr = 200
-```
-
-### Separate test configs
-
-Keep automated test configuration separate:
-
-```toml
-# Main config
-max_depth = 30
-cache = true
-
-# Test config in separate section
-[[test.files]]
-path = "mymodule.py"
-functions = ["critical_function"]
-```
-
-### Commit your config
-
-Add `tracepatch.toml` to git so your team uses consistent settings:
-
-```bash
-git add tracepatch.toml
-git commit -m "Add tracepatch configuration"
-```
-
-But keep `.tracepatch_cache/` in `.gitignore`:
-
-```gitignore
-# .gitignore
-.tracepatch_cache/
-```
-
-## Example Configurations
-
-### Web Application
-
-```toml
-ignore_modules = ["urllib3", "requests", "http", "ssl", "socketserver"]
-max_depth = 40
-max_calls = 15000
-cache = true
-default_label = "webapp"
-show_args = true
-show_return = true
-```
-
-### Data Processing Pipeline
-
-```toml
-ignore_modules = ["pandas._libs", "numpy"]
-max_depth = 20
-max_calls = 50000  # Large data operations
-max_repr = 100  # Keep logs manageable
-cache = true
-default_label = "pipeline"
-```
-
-### API Client Library
-
-```toml
-ignore_modules = ["urllib3", "http", "ssl"]
-max_depth = 30
-max_calls = 5000
-cache = true
-default_label = "api-client"
-show_args = true  # See API parameters
-show_return = true  # See API responses
-```
-
-### Testing/Debugging
-
-```toml
-# In tracepatch-test.toml
-max_depth = 100  # Deep recursion
-max_calls = 100000  # Large operations
-max_repr = 500  # Full details
-ignore_modules = []  # Trace everything
-cache = true
-default_label = "debug"
-
-[[test.files]]
-path = "module.py"
-functions = ["buggy_function"]
-
-[[test.inputs]]
-function = "buggy_function"
-args = [42, "test"]
-kwargs = {debug = true}
-```
+The validator checks:
+- Unknown keys (warns for forward compatibility)
+- Invalid types (e.g. `max_depth = "hello"`)
+- Out-of-range values (e.g. `max_depth = -1`)
+- Invalid enum values (e.g. `tree_style = "fancy"`)

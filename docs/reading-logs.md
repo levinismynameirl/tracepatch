@@ -1,235 +1,160 @@
-# Reading trace logs
+# Reading Trace Logs
 
-Every time a `trace()` block finishes with at least one recorded call,
-tracepatch writes a JSON log file to the `.tracepatch_cache/` directory in
-your working directory. These logs accumulate over time and serve as a
-persistent record of past traces that you can inspect, compare, or feed
-into other tools.
+Trace log files are plain JSON stored in `.tracepatch/traces/`. This
+guide explains the file naming, JSON schema, and how to work with them
+programmatically.
 
-## Quick access with CLI
-
-The easiest way to work with trace logs is through the `tph` CLI:
-
-```bash
-# List recent traces
-$ tph logs
-
-# View full call tree from a trace
-$ tph tree .tracepatch_cache/trace_20260212_143022_817345.json
-
-# View trace metadata and summary
-$ tph view .tracepatch_cache/trace_20260212_143022_817345.json
-```
-
-See the [CLI documentation](../README.md#command-line-interface) for more details.
-
-## Where logs are stored
-
-By default, logs go to `.tracepatch_cache/` relative to the current working
-directory. You can override this:
-
-```python
-with trace(cache_dir="/tmp/my_traces") as t:
-    handle_request()
-```
-
-The directory is created automatically on first use. It contains:
-
-- `.gitignore` -- contains `*`, so logs are never committed.
-- `README` -- a short note explaining the directory.
-- `trace_<timestamp>[_<label>].json` -- one file per trace.
-
-## File naming
-
-Log files are named with a timestamp and an optional label:
+## File Naming
 
 ```
-trace_20260212_143022_817345.json
-trace_20260212_143055_012991_checkout_flow.json
+{label}_{YYYYMMDD}_{HHMMSS}_{short-id}.json
 ```
 
-The label comes from the `label` parameter:
+Examples:
 
-```python
-with trace(label="checkout_flow") as t:
-    process_checkout(cart)
+```
+checkout-flow_20260219_143022_a1b2c3.json
+trace_20260219_150000_def456.json
 ```
 
-Labels make it easy to find the trace you care about when you have dozens of
-log files.
+- **label** — the trace label, or `"trace"` if none was set
+- **timestamp** — when the trace started (local time)
+- **short-id** — first 6 characters of a UUID for uniqueness
 
-## JSON structure
+Files are sorted by label first, then by timestamp. This makes
+`ls` output naturally group related traces.
 
-Each log file is a self-contained JSON document:
+## JSON Schema
 
 ```json
 {
-  "tracepatch_version": "0.3.2",
-  "timestamp": "2026-02-12T14:30:22.817345",
-  "label": "checkout_flow",
-  "call_count": 47,
+  "tracepatch_version": "0.3.5",
+  "schema_version": 1,
+  "timestamp": "2026-02-19T14:30:22.123456",
+  "label": "checkout-flow",
+  "trace_id": "a1b2c3",
+  "hostname": "my-machine",
+  "python_version": "3.12.0",
+  "platform": "darwin",
+  "working_directory": "/path/to/project",
+  "duration_ms": 42.3,
+  "call_count": 150,
   "was_limited": false,
+  "limit_reason": null,
   "config": {
     "max_depth": 30,
     "max_calls": 10000,
     "max_repr": 120,
     "ignore_modules": ["logging"]
   },
-  "trace": [
-    {
-      "name": "process_checkout",
-      "module": "app.checkout",
-      "args": "cart=<Cart 3 items>",
-      "return_value": "True",
-      "start": 69384.728,
-      "end": 69384.751,
-      "elapsed_ms": 23.1,
-      "children": [...]
-    }
-  ]
+  "stats": {
+    "max_depth_reached": 8,
+    "unique_functions": 23,
+    "unique_modules": 5,
+    "slowest_call_ms": 12.3,
+    "slowest_call_name": "db.query"
+  },
+  "trace": [...]
 }
 ```
 
-### Top-level fields
+### Top-Level Fields
 
-| Field                | Type   | Description                                           |
-|----------------------|--------|-------------------------------------------------------|
-| `tracepatch_version` | string | Library version that produced the log.                |
-| `timestamp`          | string | ISO 8601 wall-clock time when the trace block opened. |
-| `label`              | string | User-supplied label, or `null`.                       |
-| `call_count`         | int    | Total number of function calls recorded.              |
-| `was_limited`        | bool   | `true` if `max_calls` was hit and tracing stopped early. |
-| `config`             | object | The configuration that was active during the trace.   |
-| `trace`              | array  | List of root-level call nodes.                        |
+| Field | Type | Description |
+|---|---|---|
+| `tracepatch_version` | `str` | Library version that created the trace |
+| `schema_version` | `int` | Schema version (currently `1`) |
+| `timestamp` | `str` | ISO 8601 timestamp |
+| `label` | `str\|null` | Trace label |
+| `trace_id` | `str` | Short unique identifier |
+| `hostname` | `str` | Machine hostname |
+| `python_version` | `str` | Python version |
+| `platform` | `str` | OS platform (`darwin`, `linux`, `win32`) |
+| `working_directory` | `str` | Absolute path of the working directory |
+| `duration_ms` | `float` | Total wall-clock time in milliseconds |
+| `call_count` | `int` | Total function calls recorded |
+| `was_limited` | `bool` | Whether any limit was triggered |
+| `limit_reason` | `str\|null` | Which limit: `"max_calls"`, `"max_depth"`, `"max_time"`, or `null` |
+| `config` | `object` | Configuration used for this trace |
+| `stats` | `object` | Pre-computed summary statistics |
+| `trace` | `array` | Array of root `TraceNode` objects |
 
-### Call node fields
+### TraceNode Fields
 
-Each node in the `trace` tree has:
+Each node in the `trace` array has:
 
-| Field          | Type   | Description                                        |
-|----------------|--------|----------------------------------------------------|
-| `name`         | string | Function or method name.                           |
-| `module`       | string | Dotted module path (e.g., `app.checkout`).         |
-| `args`         | string | Truncated repr of arguments at call time.          |
-| `return_value` | string | Truncated repr of the return value, or `null`.     |
-| `exception`    | string | Present only if the call raised. Format: `Type: message`. |
-| `start`        | float  | `time.perf_counter()` timestamp at call entry.     |
-| `end`          | float  | `time.perf_counter()` timestamp at call exit.      |
-| `elapsed_ms`   | float  | Wall-clock elapsed time in milliseconds.           |
-| `children`     | array  | Nested calls made during this function's execution. Present only if non-empty. |
+| Field | Type | Description |
+|---|---|---|
+| `name` | `str` | Function name |
+| `module` | `str` | Module name |
+| `args` | `str` | Stringified arguments |
+| `return_value` | `str\|null` | Stringified return value |
+| `exception` | `str\|null` | Exception string if raised |
+| `start` | `float` | Start time (`time.time()`) |
+| `end` | `float` | End time |
+| `elapsed_ms` | `float` | Elapsed time in milliseconds |
+| `file` | `str\|null` | Source file path |
+| `lineno` | `int\|null` | Source line number |
+| `children` | `array` | Nested child calls |
 
-The `start` and `end` values are monotonic clock readings from
-`time.perf_counter()`. They are useful for computing relative offsets between
-calls within a single trace, but they are not wall-clock times. Use the
-top-level `timestamp` field for wall-clock reference.
+## Working with Traces Programmatically
 
-## Listing past logs from Python
-
-```python
-from tracepatch import trace
-
-# List the 10 most recent trace logs (newest first).
-for entry in trace.logs(limit=10):
-    print(entry["timestamp"], entry["label"], f'{entry["call_count"]} calls')
-    print("  ", entry["file"])
-```
-
-Each entry in the list contains:
-
-- `file` -- absolute path to the JSON log.
-- `timestamp` -- ISO timestamp from the log.
-- `label` -- the label, or `None`.
-- `call_count` -- number of calls recorded.
-- `was_limited` -- whether the trace was truncated.
-
-## Loading a full log
-
-```python
-data = trace.load("/path/to/.tracepatch_cache/trace_20260212_143022_817345.json")
-
-# data is the full JSON dict, including the "trace" tree.
-for node in data["trace"]:
-    print(node["module"], node["name"], node["elapsed_ms"], "ms")
-```
-
-Or use the `cache_path` property right after a trace:
-
-```python
-with trace(label="debug_signup") as t:
-    signup_user(request)
-
-# Saved automatically; read it back if needed.
-data = trace.load(t.cache_path)
-```
-
-## Disabling the log cache
-
-If you do not want logs written to disk (for example in tests or benchmarks):
-
-```python
-with trace(cache=False) as t:
-    ...
-```
-
-## Reading logs from the command line
-
-### Using the tracepatch CLI
-
-The `tph` command provides convenient access to traces:
-
-```bash
-# List all traces with metadata
-$ tph logs
-
-# Display a specific trace's call tree
-$ tph tree .tracepatch_cache/trace_20260212_143022_817345.json
-
-# View trace metadata and configuration
-$ tph view .tracepatch_cache/trace_20260212_143022_817345.json
-
-# Filter tree depth for readability
-$ tph tree --max-depth 5 .tracepatch_cache/trace_20260212_143022_817345.json
-```
-
-### Using standard Unix tools
-
-The files are plain JSON, so standard tools work:
-
-```bash
-# List all trace logs by date (newest first)
-ls -lt .tracepatch_cache/
-
-# Pretty-print the most recent one
-cat .tracepatch_cache/$(ls -t .tracepatch_cache/trace_*.json | head -1) | python -m json.tool
-
-# Search for a specific function in all logs
-grep -l '"name": "process_checkout"' .tracepatch_cache/trace_*.json
-
-# Count calls in each log
-for f in .tracepatch_cache/trace_*.json; do
-    echo "$f: $(python -c "import json; print(json.load(open('$f'))['call_count'])")"
-done
-```
-
-## Comparing two traces
-
-A common workflow is to trace a request before and after a change, then
-compare:
+### Loading a Trace
 
 ```python
 from tracepatch import trace
 
-logs = trace.logs(limit=2)
-old = trace.load(logs[1]["file"])
-new = trace.load(logs[0]["file"])
-
-print(f"Before: {old['call_count']} calls")
-print(f"After:  {new['call_count']} calls")
+data = trace.load("path/to/trace.json")
+print(data["label"])
+print(data["call_count"])
 ```
 
-Since the JSON structure is stable, you can also diff them with standard
-tools:
+### Listing Saved Traces
+
+```python
+logs = trace.logs()  # returns list of dicts with metadata
+for entry in logs:
+    print(entry["file"], entry["label"], entry["call_count"])
+```
+
+### Getting a Summary
+
+```python
+from tracepatch import trace
+
+with trace(label="my-op") as t:
+    my_function()
+
+summary = t.summary()
+print(f"Calls: {summary.call_count}")
+print(f"Max depth: {summary.max_depth_reached}")
+print(f"Slowest: {summary.slowest_call_name} [{summary.slowest_call_ms:.1f}ms]")
+print(f"Unique functions: {len(summary.unique_functions)}")
+```
+
+## Storage Location
+
+Traces are saved to `.tracepatch/traces/` relative to the working
+directory. The directory structure is:
+
+```
+.tracepatch/
+├── README.md           ← human-readable explanation
+├── state.json          ← setup/cleanup state
+└── traces/
+    ├── .gitignore      ← contains "*" to exclude traces from git
+    ├── checkout-flow_20260219_143022_a1b2c3.json
+    └── trace_20260219_150000_def456.json
+```
+
+The `traces/` subdirectory is git-ignored. The top-level `.tracepatch/`
+directory (including `state.json` and `README.md`) is intended to be
+committed.
+
+## Cleaning Up
 
 ```bash
-diff <(python -m json.tool old_trace.json) <(python -m json.tool new_trace.json)
+tph clean --traces              # remove all trace files
+tph clean --older-than 7d       # remove traces older than 7 days
+tph clean --all                 # remove entire .tracepatch/ directory
 ```
