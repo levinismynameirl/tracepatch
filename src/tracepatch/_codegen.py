@@ -64,7 +64,11 @@ def create_test_runner(
 
         module_parts: list[str] = []
         for part in file_path.with_suffix("").parts:
-            if part in ("src", "."):
+            # Skip common non-package path components.
+            # "." is a relative-path marker, "src" is the conventional
+            # Python src-layout directory.  We also skip ".." to handle
+            # relative parent references.
+            if part in (".", "..", "src"):
                 continue
             module_parts.append(part)
 

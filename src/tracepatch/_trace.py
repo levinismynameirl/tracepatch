@@ -674,14 +674,16 @@ def collapse_tree(
     """
 
     def _count_and_time(node: TraceNode) -> tuple[int, float]:
-        """Return (total_nodes, total_elapsed) under *node*."""
+        """Return (total_nodes, total_elapsed) under *node*.
+
+        *total_elapsed* is the node's own elapsed time (which already
+        includes children — it is wall-clock from call to return).
+        """
         count = 1
-        elapsed = node.elapsed
         for child in node.children:
-            c, _e = _count_and_time(child)
+            c, _ = _count_and_time(child)
             count += c
-            elapsed = max(elapsed, node.elapsed)  # parent already includes children
-        return count, elapsed
+        return count, node.elapsed
 
     def _collapse(node_list: list[TraceNode], depth: int) -> list[TraceNode]:
         if depth >= max_depth:
@@ -997,17 +999,32 @@ class _Collector:
         node = self._stack[-1]
         code = frame.f_code
 
-        # Make sure we are popping the right frame.
-        if node.name != code.co_name:
+        # Match frame to the correct stack entry.  We check co_name,
+        # co_filename, and co_firstlineno to avoid mismatches with
+        # generators and yield-based coroutines where the return event
+        # can fire on suspended/resumed frames.
+        def _matches(n: TraceNode) -> bool:
+            if n.name != code.co_name:
+                return False
+            # Extra checks for disambiguation when multiple functions
+            # share the same co_name (e.g. lambdas, inner functions).
+            if n.file is not None and n.file != code.co_filename:
+                return False
+            return not (n.lineno is not None and n.lineno != code.co_firstlineno)
+
+        if _matches(node):
+            self._stack.pop()
+        else:
+            # Reverse scan — find the most recent matching frame.
+            found = False
             for idx in range(len(self._stack) - 1, -1, -1):
-                if self._stack[idx].name == code.co_name:
+                if _matches(self._stack[idx]):
                     node = self._stack[idx]
                     self._stack = self._stack[:idx]
+                    found = True
                     break
-            else:
+            if not found:
                 return
-        else:
-            self._stack.pop()
 
         node.end = time.perf_counter()
         node.elapsed = node.end - node.start
