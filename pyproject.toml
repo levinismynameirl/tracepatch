@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracepatch"
-version = "0.3.5"
+version = "1.0.0"
 description = "Focused, opt-in runtime call tracing for a single execution context."
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,7 @@ authors = [
     { name = "levinismynameirl" },
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
