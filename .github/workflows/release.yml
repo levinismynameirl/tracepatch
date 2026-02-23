@@ -39,9 +39,6 @@ jobs:
       - release-build
     permissions:
       id-token: write
-    environment:
-      name: pypi
-      url: https://pypi.org/p/tracepatch
 
     steps:
       - name: Retrieve release distributions
