@@ -26,8 +26,7 @@ try:
     from django.conf import settings
 except ImportError as exc:
     raise ImportError(
-        "tracepatch.integrations.django requires 'django'. "
-        "Install with: pip install django"
+        "tracepatch.integrations.django requires 'django'. Install with: pip install django"
     ) from exc
 
 if TYPE_CHECKING:
@@ -62,9 +61,7 @@ class TracepatchMiddleware:
         ignore = self._cfg.get("ignore_modules", [])
         save = self._cfg.get("save", False)
         kwargs = {
-            k: v
-            for k, v in self._cfg.items()
-            if k not in ("ignore_modules", "save", "enabled")
+            k: v for k, v in self._cfg.items() if k not in ("ignore_modules", "save", "enabled")
         }
 
         label = f"{request.method} {request.path}"

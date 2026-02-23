@@ -131,7 +131,7 @@ def nodes_to_flamegraph(
 
         rects.append(
             f'<g class="frame">'
-            f'<title>{tooltip}</title>'
+            f"<title>{tooltip}</title>"
             f'<rect x="{x_offset + 10:.2f}" y="{y}" '
             f'width="{bar_width:.2f}" height="{row_height - 2}" '
             f'fill="{color}" rx="1" />'

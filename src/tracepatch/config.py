@@ -255,25 +255,27 @@ class TracepatchConfig:
     # Known TOML keys (for validation)
     # ------------------------------------------------------------------
 
-    _KNOWN_KEYS: frozenset[str] = frozenset({
-        "ignore_modules",
-        "include_modules",
-        "max_depth",
-        "max_calls",
-        "max_repr",
-        "max_repr_args",
-        "max_repr_return",
-        "max_time",
-        "cache",
-        "cache_dir",
-        "default_label",
-        "auto_save",
-        "show_args",
-        "show_return",
-        "tree_style",
-        "color",
-        "test",
-    })
+    _KNOWN_KEYS: frozenset[str] = frozenset(
+        {
+            "ignore_modules",
+            "include_modules",
+            "max_depth",
+            "max_calls",
+            "max_repr",
+            "max_repr_args",
+            "max_repr_return",
+            "max_time",
+            "cache",
+            "cache_dir",
+            "default_label",
+            "auto_save",
+            "show_args",
+            "show_return",
+            "tree_style",
+            "color",
+            "test",
+        }
+    )
 
     def effective_max_repr_args(self) -> int:
         """Return the effective max repr length for arguments.
@@ -319,11 +321,13 @@ class TracepatchConfig:
         raw = label if label is not None else self.default_label
         if raw is None:
             return None
-        return raw.format_map({
-            "hostname": socket.gethostname(),
-            "pid": os.getpid(),
-            "timestamp": datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
-        })
+        return raw.format_map(
+            {
+                "hostname": socket.gethostname(),
+                "pid": os.getpid(),
+                "timestamp": datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
+            }
+        )
 
     @classmethod
     def default(cls) -> TracepatchConfig:
@@ -450,9 +454,7 @@ class TracepatchConfig:
 
         # Enum checks
         if self.tree_style not in ("ascii", "unicode"):
-            raise ConfigError(
-                f"tree_style must be 'ascii' or 'unicode', got {self.tree_style!r}"
-            )
+            raise ConfigError(f"tree_style must be 'ascii' or 'unicode', got {self.tree_style!r}")
 
         return warnings
 

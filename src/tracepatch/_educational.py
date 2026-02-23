@@ -144,9 +144,7 @@ def _guess_complexity(
     def _walk(node: TraceNode) -> None:
         fqn = f"{node.module}.{node.name}" if node.module else node.name
         child_same = sum(
-            1
-            for c in node.children
-            if (f"{c.module}.{c.name}" if c.module else c.name) == fqn
+            1 for c in node.children if (f"{c.module}.{c.name}" if c.module else c.name) == fqn
         )
         if child_same > 0:
             func_self_calls[fqn] = max(func_self_calls.get(fqn, 0), child_same)
@@ -164,7 +162,10 @@ def _guess_complexity(
             hints.append({"name": name, "hint": "O(2^n) — binary recursion (observed pattern)"})
         elif branches >= 3:
             hints.append(
-                {"name": name, "hint": f"O({branches}^n) — {branches}-way recursion (observed pattern)"}
+                {
+                    "name": name,
+                    "hint": f"O({branches}^n) — {branches}-way recursion (observed pattern)",
+                }
             )
 
     return hints
@@ -211,9 +212,7 @@ def explain(
     if len(roots) == 1:
         lines.append(f"The program started by calling {fqn0}({first.args}).")
     else:
-        names = ", ".join(
-            f"{r.module}.{r.name}" if r.module else r.name for r in roots[:3]
-        )
+        names = ", ".join(f"{r.module}.{r.name}" if r.module else r.name for r in roots[:3])
         more = f" and {len(roots) - 3} more" if len(roots) > 3 else ""
         lines.append(f"The program made {len(roots)} top-level calls: {names}{more}.")
 
@@ -221,9 +220,7 @@ def explain(
         f"In total, {summary.call_count} function call(s) were recorded "
         f"across {summary.unique_module_count} module(s)."
     )
-    lines.append(
-        f"The deepest the call stack reached was {summary.max_depth_reached} level(s)."
-    )
+    lines.append(f"The deepest the call stack reached was {summary.max_depth_reached} level(s).")
     lines.append("")
 
     # --- Pattern observations -------------------------------------------
@@ -253,9 +250,7 @@ def explain(
     slow = _detect_slow_calls(roots, summary.total_duration_ms)
     for s in slow[:5]:
         observations += 1
-        lines.append(
-            f"  \u25cf {s['name']} is slow — {s['ms']}ms ({s['pct']}% of total time)"
-        )
+        lines.append(f"  \u25cf {s['name']} is slow — {s['ms']}ms ({s['pct']}% of total time)")
 
     # Exceptions
     exceptions = _detect_exceptions(roots)
@@ -288,9 +283,7 @@ def explain(
     from tracepatch._trace import _format_elapsed
 
     dur = _format_elapsed(summary.total_duration_ms / 1000)
-    lines.append(
-        f"Total time: {dur} across {summary.call_count} call(s)."
-    )
+    lines.append(f"Total time: {dur} across {summary.call_count} call(s).")
     if summary.slowest_call_name:
         lines.append(
             f"Slowest single call: {summary.slowest_call_name} "

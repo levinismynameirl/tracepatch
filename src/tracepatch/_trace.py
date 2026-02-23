@@ -233,9 +233,7 @@ class TraceSummary:
         summary.max_depth_reached = max_depth
         summary.slowest_call_ms = slowest_ms
         summary.slowest_call_name = slowest_name
-        summary.most_called = sorted(
-            call_counts.items(), key=lambda x: x[1], reverse=True
-        )[:10]
+        summary.most_called = sorted(call_counts.items(), key=lambda x: x[1], reverse=True)[:10]
         return summary
 
 

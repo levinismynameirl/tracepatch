@@ -759,9 +759,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
                     f"  {timing_pct:+.0f}%]"
                 )
             if count_a > 0 and abs(count_b - count_a) / count_a > 0.1:
-                changes.append(
-                    f"~ {fn:<40} calls      [\u00d7{count_a} -> \u00d7{count_b}]"
-                )
+                changes.append(f"~ {fn:<40} calls      [\u00d7{count_a} -> \u00d7{count_b}]")
 
     if changes:
         for line in changes:
@@ -800,19 +798,23 @@ def cmd_export(args: argparse.Namespace) -> int:
 
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["module", "function", "args", "return_value", "elapsed_ms", "depth", "parent"])
+        writer.writerow(
+            ["module", "function", "args", "return_value", "elapsed_ms", "depth", "parent"]
+        )
 
         def _csv_walk(node: TraceNode, depth: int, parent: str) -> None:
             fqn = f"{node.module}.{node.name}"
-            writer.writerow([
-                node.module,
-                node.name,
-                node.args,
-                node.return_value or "",
-                f"{node.elapsed * 1000:.4f}",
-                depth,
-                parent,
-            ])
+            writer.writerow(
+                [
+                    node.module,
+                    node.name,
+                    node.args,
+                    node.return_value or "",
+                    f"{node.elapsed * 1000:.4f}",
+                    depth,
+                    parent,
+                ]
+            )
             for c in node.children:
                 _csv_walk(c, depth + 1, fqn)
 
@@ -1110,7 +1112,8 @@ def main() -> int:
     )
     explain_parser.add_argument("file", help="Path to trace JSON file")
     explain_parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Include complexity hints and deeper analysis",
     )

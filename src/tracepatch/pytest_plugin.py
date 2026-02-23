@@ -131,10 +131,7 @@ class TraceResult:
 
     def _all_fqns(self) -> set[str]:
         """Collect all fully-qualified function names from the tree."""
-        return {
-            (f"{n.module}.{n.name}" if n.module else n.name)
-            for n in self._all_nodes()
-        }
+        return {(f"{n.module}.{n.name}" if n.module else n.name) for n in self._all_nodes()}
 
     def _match_fqns(self, pattern: str) -> set[str]:
         """Return FQNs matching a glob-like pattern (supports ``*``)."""
@@ -165,32 +162,25 @@ class TraceResult:
         matches = self._match_fqns(pattern)
         if matches:
             pytest.fail(
-                f"Expected no calls matching '{pattern}', but found: "
-                f"{', '.join(sorted(matches))}"
+                f"Expected no calls matching '{pattern}', but found: {', '.join(sorted(matches))}"
             )
 
     def assert_called_once(self, pattern: str) -> None:
         """Assert exactly one call matches *pattern* (glob)."""
         count = self._count_fqn_occurrences(pattern)
         if count != 1:
-            pytest.fail(
-                f"Expected exactly 1 call matching '{pattern}', but found {count}"
-            )
+            pytest.fail(f"Expected exactly 1 call matching '{pattern}', but found {count}")
 
     def assert_called_n_times(self, pattern: str, n: int) -> None:
         """Assert exactly *n* calls match *pattern* (glob)."""
         count = self._count_fqn_occurrences(pattern)
         if count != n:
-            pytest.fail(
-                f"Expected exactly {n} calls matching '{pattern}', but found {count}"
-            )
+            pytest.fail(f"Expected exactly {n} calls matching '{pattern}', but found {count}")
 
     def assert_max_calls(self, max_n: int) -> None:
         """Assert total call count does not exceed *max_n*."""
         if self._call_count > max_n:
-            pytest.fail(
-                f"Expected at most {max_n} calls, but got {self._call_count}"
-            )
+            pytest.fail(f"Expected at most {max_n} calls, but got {self._call_count}")
 
     def assert_max_depth(self, max_d: int) -> None:
         """Assert tree depth does not exceed *max_d*."""
@@ -198,10 +188,7 @@ class TraceResult:
 
         summary = TraceSummary.from_roots(self._roots)
         if summary.max_depth_reached > max_d:
-            pytest.fail(
-                f"Expected max depth {max_d}, but reached "
-                f"{summary.max_depth_reached}"
-            )
+            pytest.fail(f"Expected max depth {max_d}, but reached {summary.max_depth_reached}")
 
     def assert_under_ms(self, pattern: str, max_ms: float) -> None:
         """Assert every call matching *pattern* took <*max_ms* (total elapsed)."""
@@ -212,9 +199,7 @@ class TraceResult:
             if fnmatch.fnmatch(fqn, pattern):
                 ms = n.elapsed * 1000
                 if ms > max_ms:
-                    pytest.fail(
-                        f"{fqn} took {ms:.2f}ms (total), exceeding limit of {max_ms}ms"
-                    )
+                    pytest.fail(f"{fqn} took {ms:.2f}ms (total), exceeding limit of {max_ms}ms")
 
     def assert_self_time_under_ms(self, pattern: str, max_ms: float) -> None:
         """Assert self-time of every call matching *pattern* is below *max_ms*.
@@ -364,12 +349,8 @@ def tracepatch(request: pytest.FixtureRequest) -> TraceResult:  # type: ignore[m
 
         # Attach trace metadata to JUnit XML report when available.
         if hasattr(request.node, "user_properties"):
-            request.node.user_properties.append(
-                ("tracepatch.call_count", result._call_count)
-            )
-            request.node.user_properties.append(
-                ("tracepatch.was_limited", result._was_limited)
-            )
+            request.node.user_properties.append(("tracepatch.call_count", result._call_count))
+            request.node.user_properties.append(("tracepatch.was_limited", result._was_limited))
 
 
 # ======================================================================

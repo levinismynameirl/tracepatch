@@ -23,8 +23,7 @@ try:
     from flask import request as flask_request
 except ImportError as exc:
     raise ImportError(
-        "tracepatch.integrations.flask requires 'flask'. "
-        "Install with: pip install flask"
+        "tracepatch.integrations.flask requires 'flask'. Install with: pip install flask"
     ) from exc
 
 

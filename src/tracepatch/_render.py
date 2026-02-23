@@ -157,8 +157,10 @@ def nodes_to_html(roots: list[TraceNode], title: str = "Trace Tree") -> str:
                 val = f"{_format_elapsed(st['total_ms'] / 1000)}"  # type: ignore[operator]
             else:
                 val = f"\u00d7{st['count']}"
-            parts.append(f"<li><span class='sb-name'>{safe_name}</span>"
-                         f"<span class='sb-val'>{val}</span></li>")
+            parts.append(
+                f"<li><span class='sb-name'>{safe_name}</span>"
+                f"<span class='sb-val'>{val}</span></li>"
+            )
         return "\n".join(parts)
 
     slowest_html = _sidebar_list(slowest, "total_ms")
@@ -194,8 +196,9 @@ def nodes_to_html(roots: list[TraceNode], title: str = "Trace Tree") -> str:
         tree_parts.append(f"(<span class='args'>{short_args}</span>)")
 
         if node.exception:
-            tree_parts.append(f" <span class='exception'>!! "
-                              f"{_html.escape(node.exception[:60])}</span>")
+            tree_parts.append(
+                f" <span class='exception'>!! {_html.escape(node.exception[:60])}</span>"
+            )
         elif node.return_value:
             short_ret = _html.escape(
                 node.return_value[:60] + ("\u2026" if len(node.return_value) > 60 else "")
